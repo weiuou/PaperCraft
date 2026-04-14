@@ -1,0 +1,11 @@
+{
+  "name": "ai-papercraft-studio",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "scripts": {
+    "dev:infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "dev:infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "dev:infra:ps": "docker compose -f infra/docker/docker-compose.yml ps"
+  }
+}
