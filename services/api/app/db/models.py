@@ -8,12 +8,14 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -35,6 +37,10 @@ def enum_column(enum_type: type, length: int = 64) -> Mapped[str]:
     return mapped_column(String(length), nullable=False)
 
 
+def metadata_column() -> Mapped[dict[str, Any]]:
+    return mapped_column("metadata", JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict)
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -52,7 +58,7 @@ class TimestampMixin:
 class User(TimestampMixin, Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(120))
     plan_type: Mapped[str] = mapped_column(String(40), nullable=False, default="free")
@@ -75,13 +81,13 @@ class Project(TimestampMixin, Base):
         Index("ix_projects_status", "status"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     category: Mapped[str] = enum_column(ProjectCategory)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default=ProjectStatus.DRAFT.value)
     cover_image_url: Mapped[str | None] = mapped_column(Text)
-    latest_task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    latest_task_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
 
     user: Mapped[User] = relationship(back_populates="projects")
     source_images: Mapped[list["SourceImage"]] = relationship(back_populates="project")
@@ -95,7 +101,7 @@ class SourceImage(Base):
         UniqueConstraint("project_id", "sort_order", name="uq_source_images_project_sort_order"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -129,7 +135,7 @@ class GenerationTask(TimestampMixin, Base):
         Index("ix_generation_tasks_stage", "stage"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default=TaskStatus.DRAFT.value)
     stage: Mapped[str] = mapped_column(
@@ -180,7 +186,7 @@ class ParamConfig(Base):
         Index("ix_param_configs_task_id", "task_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("generation_tasks.id"), nullable=False, unique=True)
     category: Mapped[str] = enum_column(ProjectCategory)
     complexity_level: Mapped[str] = mapped_column(
@@ -222,13 +228,13 @@ class Artifact(Base):
         Index("ix_artifacts_kind", "kind"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("generation_tasks.id"), nullable=False)
     kind: Mapped[str] = enum_column(ArtifactKind)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
     file_size: Mapped[int | None] = mapped_column(Integer)
-    artifact_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    artifact_metadata: Mapped[dict[str, Any]] = metadata_column()
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -254,13 +260,13 @@ class AssemblyMetadata(TimestampMixin, Base):
         Index("ix_assembly_metadata_task_id", "task_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("generation_tasks.id"), nullable=False, unique=True)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False)
     part_count: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty_score: Mapped[int] = mapped_column(Integer, nullable=False)
     estimated_build_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    assembly_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    assembly_metadata: Mapped[dict[str, Any]] = metadata_column()
 
     task: Mapped[GenerationTask] = relationship(back_populates="assembly_metadata")
 
@@ -281,12 +287,12 @@ class TaskEvent(Base):
         Index("ix_task_events_event_type", "event_type"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("generation_tasks.id"), nullable=False)
     stage: Mapped[str | None] = mapped_column(String(64))
     event_type: Mapped[str] = enum_column(TaskEventType)
     message: Mapped[str | None] = mapped_column(Text)
-    event_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    event_metadata: Mapped[dict[str, Any]] = metadata_column()
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
