@@ -1,7 +1,7 @@
 import uuid
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from app.schemas.projects import (
     ProjectResponse,
     TaskCreatedResponse,
 )
+from app.services.task_dispatch import enqueue_generation_task
 from app.services.storage_paths import source_image_key
 
 router = APIRouter(tags=["projects"])
@@ -211,6 +212,7 @@ def create_project_task(
     project.latest_task_id = task.id
     db.commit()
     db.refresh(task)
+    enqueue_generation_task(task.id)
 
     return TaskCreatedResponse(
         task_id=task.id,
