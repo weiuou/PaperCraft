@@ -189,6 +189,7 @@ All API errors should use this shape:
 
 Upload and validation:
 
+- `REQUEST_VALIDATION_FAILED`
 - `UPLOAD_UNSUPPORTED_TYPE`
 - `UPLOAD_FILE_TOO_LARGE`
 - `UPLOAD_TOO_MANY_IMAGES`

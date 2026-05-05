@@ -13,13 +13,28 @@ Planned responsibilities:
 ## Current implementation
 
 The first implementation slice defines the core data and task contracts for
-issue `#3`:
+issues `#3` and `#4`:
 
 - SQLAlchemy models for the core MVP entities
 - Alembic migration `20260505_0001_core_schema`
 - task state-machine helpers
 - object storage key helpers
 - API error response schema and error code enum
+- FastAPI app entrypoint with health check and `/api` routes
+- project create/list/detail endpoints
+- source image upload endpoint with MIME, size, count, and decode validation
+- task creation endpoint with immutable parameter snapshot persistence
+- task status endpoint with stable stage, progress, and error fields
+
+Implemented endpoints:
+
+- `GET /health`
+- `POST /api/projects`
+- `GET /api/projects`
+- `GET /api/projects/{project_id}`
+- `POST /api/projects/{project_id}/images`
+- `POST /api/projects/{project_id}/tasks`
+- `GET /api/tasks/{task_id}`
 
 ## Local commands
 
