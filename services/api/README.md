@@ -13,7 +13,7 @@ Planned responsibilities:
 ## Current implementation
 
 The first implementation slice defines the core data and task contracts for
-issues `#3` and `#4`:
+issues `#3`, `#4`, and `#5`:
 
 - SQLAlchemy models for the core MVP entities
 - Alembic migration `20260505_0001_core_schema`
@@ -25,6 +25,11 @@ issues `#3` and `#4`:
 - source image upload endpoint with MIME, size, count, and decode validation
 - task creation endpoint with immutable parameter snapshot persistence
 - task status endpoint with stable stage, progress, and error fields
+- Celery app configuration backed by Redis
+- task enqueueing from the task creation API
+- worker pipeline orchestrator with mock stage execution
+- task events, progress updates, completion, failure write-back, and retry or
+  cancellation hooks
 
 Implemented endpoints:
 
@@ -54,4 +59,16 @@ Apply migrations to the configured database:
 
 ```bash
 uv run alembic upgrade head
+```
+
+Run the API:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Run the worker:
+
+```bash
+uv run celery -A app.worker.celery_app:celery_app worker --loglevel=INFO
 ```

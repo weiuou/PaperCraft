@@ -5,6 +5,7 @@ description = "FastAPI service for AI PaperCraft Studio"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.13.3",
+  "celery[redis]>=5.4.0",
   "fastapi>=0.115.0",
   "pillow>=11.0.0",
   "pydantic>=2.9.0",

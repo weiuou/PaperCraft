@@ -16,7 +16,18 @@ from app.main import create_app
 
 
 @pytest.fixture()
-def client() -> Generator[TestClient]:
+def dispatched_task_ids(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    task_ids: list[str] = []
+
+    def record_enqueue(task_id) -> None:
+        task_ids.append(str(task_id))
+
+    monkeypatch.setattr("app.api.routes.projects.enqueue_generation_task", record_enqueue)
+    return task_ids
+
+
+@pytest.fixture()
+def client(dispatched_task_ids: list[str]) -> Generator[TestClient]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -51,7 +62,7 @@ def _create_project(client: TestClient) -> str:
     return response.json()["project_id"]
 
 
-def test_project_upload_task_happy_path(client: TestClient) -> None:
+def test_project_upload_task_happy_path(client: TestClient, dispatched_task_ids: list[str]) -> None:
     project_id = _create_project(client)
 
     project_response = client.get(f"/api/projects/{project_id}")
@@ -88,6 +99,7 @@ def test_project_upload_task_happy_path(client: TestClient) -> None:
     assert task_payload["initial_status"] == "queued"
     assert task_payload["stage"] == "upload_validation"
     assert task_payload["progress"] == 0
+    assert dispatched_task_ids == [task_payload["task_id"]]
 
     status_response = client.get(f"/api/tasks/{task_payload['task_id']}")
     assert status_response.status_code == 200
