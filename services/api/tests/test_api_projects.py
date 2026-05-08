@@ -107,6 +107,8 @@ def test_project_upload_task_happy_path(client: TestClient, dispatched_task_ids:
     assert status_payload["status"] == "queued"
     assert status_payload["stage"] == "upload_validation"
     assert status_payload["error_code"] is None
+    assert status_payload["artifacts"] == []
+    assert status_payload["assembly_metadata"] is None
 
     list_response = client.get("/api/projects")
     assert list_response.status_code == 200

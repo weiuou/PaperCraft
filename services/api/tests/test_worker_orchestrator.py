@@ -9,8 +9,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db import models  # noqa: F401
-from app.db.models import GenerationTask, Project, TaskEvent, User
-from app.domain.enums import ErrorCode, ProjectCategory, ProjectStatus, TaskEventType, TaskStage, TaskStatus
+from app.db.models import Artifact, AssemblyMetadata, GenerationTask, Project, TaskEvent, User
+from app.domain.enums import ArtifactKind, ErrorCode, ProjectCategory, ProjectStatus, TaskEventType, TaskStage, TaskStatus
 from app.worker.orchestrator import (
     MockStageExecutor,
     StageResult,
@@ -77,6 +77,22 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     assert any(event.event_type == TaskEventType.PROGRESS_UPDATED.value for event in events)
     assert events[-1].event_type == TaskEventType.COMPLETED.value
     assert f"task_id={task_id}" in caplog.text
+
+    artifacts = db.scalars(select(Artifact).where(Artifact.task_id == task_id)).all()
+    assert {artifact.kind for artifact in artifacts} == {
+        ArtifactKind.PREVIEW_MODEL.value,
+        ArtifactKind.NET_JSON.value,
+        ArtifactKind.EXPORT_PDF.value,
+    }
+    assert all(artifact.artifact_metadata["mock"] for artifact in artifacts)
+    assert all(str(task_id) in artifact.storage_key for artifact in artifacts)
+
+    assembly = db.scalar(select(AssemblyMetadata).where(AssemblyMetadata.task_id == task_id))
+    assert assembly is not None
+    assert assembly.page_count == 3
+    assert assembly.part_count == 12
+    assert assembly.difficulty_score == 3
+    assert assembly.assembly_metadata["pair_numbering"]
 
 
 def test_pipeline_failure_writes_readable_error(db: Session) -> None:

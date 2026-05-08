@@ -30,6 +30,8 @@ issues `#3`, `#4`, and `#5`:
 - worker pipeline orchestrator with mock stage execution
 - task events, progress updates, completion, failure write-back, and retry or
   cancellation hooks
+- mock artifact records for 3D preview, paper-net preview data, PDF export, and
+  assembly metadata
 
 Implemented endpoints:
 
@@ -39,7 +41,9 @@ Implemented endpoints:
 - `GET /api/projects/{project_id}`
 - `POST /api/projects/{project_id}/images`
 - `POST /api/projects/{project_id}/tasks`
-- `GET /api/tasks/{task_id}`
+- `GET /api/tasks/{task_id}` including artifacts and assembly metadata when
+  available
+- `GET /api/artifacts/{artifact_id}/download` for local mock artifact downloads
 
 ## Local commands
 
@@ -71,4 +75,10 @@ Run the worker:
 
 ```bash
 uv run celery -A app.worker.celery_app:celery_app worker --loglevel=INFO
+```
+
+Run the API, worker, and dependencies through Docker Compose:
+
+```bash
+docker compose -f ../../infra/docker/docker-compose.yml up -d --build api worker
 ```

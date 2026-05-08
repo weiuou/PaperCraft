@@ -138,7 +138,7 @@ async def upload_project_image(
         with Image.open(BytesIO(contents)) as image:
             width, height = image.size
             image.verify()
-    except (UnidentifiedImageError, OSError):
+    except (SyntaxError, UnidentifiedImageError, OSError):
         raise ApiError(ErrorCode.UPLOAD_IMAGE_INVALID, "Uploaded image could not be decoded.")
 
     image_id = uuid.uuid4()

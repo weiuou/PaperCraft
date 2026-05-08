@@ -3,6 +3,11 @@
   "private": true,
   "packageManager": "pnpm@10.18.0",
   "scripts": {
+    "dev:web": "pnpm --filter @papercraft/web dev",
+    "build:web": "pnpm --filter @papercraft/web build",
+    "typecheck:web": "pnpm --filter @papercraft/web typecheck",
+    "dev:web:docker": "docker compose -f infra/docker/docker-compose.yml up -d --build web",
+    "dev:docker": "docker compose -f infra/docker/docker-compose.yml up -d --build",
     "dev:infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "dev:infra:down": "docker compose -f infra/docker/docker-compose.yml down",
     "dev:infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",

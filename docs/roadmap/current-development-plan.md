@@ -1,18 +1,21 @@
 # AI PaperCraft Studio Current Development Plan
 
-Last updated: 2026-05-05
+Last updated: 2026-05-08
 
 ## Current Position
 
-The repository has completed the initial engineering bootstrap from issue `#2`.
-The next priority is to turn the architecture and MVP roadmap into stable
-contracts that API, worker, frontend, and algorithm work can depend on.
+The repository has completed the M1 backend foundation through the worker
+backbone and the first M2 frontend flow. The next priority is to finish the
+remaining workbench behaviors and broaden the mock demo coverage before
+replacing the mock stages with real algorithms.
 
 ## Near-Term Execution Plan
 
 ### M1.1 Product and Acceptance Contract
 
 Owner focus: product, QA, engineering lead
+
+Status: completed.
 
 - Freeze MVP scope for inputs, categories, outputs, and explicit non-goals.
 - Define acceptance samples for happy paths and known failure paths.
@@ -27,6 +30,8 @@ Exit criteria:
 ### M1.2 Core Data and Task Contract
 
 Owner focus: backend, worker
+
+Status: completed.
 
 - Implement the first database schema for users, projects, source images,
   generation tasks, parameter snapshots, artifacts, assembly metadata, and task
@@ -45,6 +50,8 @@ Exit criteria:
 
 Owner focus: backend
 
+Status: completed.
+
 - Build project create/list/detail endpoints.
 - Build image upload validation and metadata persistence.
 - Build task creation and task status endpoints.
@@ -58,6 +65,8 @@ Exit criteria:
 ### M1.4 Async Worker Backbone
 
 Owner focus: backend, worker
+
+Status: completed.
 
 - Integrate Celery with Redis.
 - Add task enqueueing from API to worker.
@@ -73,16 +82,42 @@ Exit criteria:
 
 Owner focus: frontend, backend, worker
 
-- Build create-project and progress frontend flows.
-- Build workbench shell with 3D preview and net preview placeholders.
-- Implement mock artifacts for an end-to-end demo.
+Status: in progress.
+
+Completed:
+
+- Build create-project, upload, parameter, and progress frontend flows.
+- Connect frontend task polling to backend status, artifacts, and assembly
+  metadata.
+- Run the full stack through Docker Compose for local internal demos.
+
+Remaining:
+
+- Add paper-net page switching and richer workbench artifact interactions.
+- Add regenerate/export actions around the project detail flow.
+- Demonstrate failure and cancellation flows with mock pipeline controls.
+- Add project artifact history once multiple task runs are visible.
+
+Current backend support:
+
+- completed mock tasks now record a 3D preview placeholder, net JSON
+  placeholder, PDF export placeholder, and assembly metadata.
+- task status responses include available artifacts and assembly metadata for
+  frontend polling and workbench rendering.
+- local mock artifact downloads are exposed through the API so the frontend can
+  exercise preview/export actions before object storage integration.
+- Docker Compose can run the web, API, worker, database, Redis, and MinIO stack.
+- the workbench renders mock net JSON as a paper page and part list for the
+  internal demo flow.
 
 Exit criteria:
 
-- Issues `#6`, `#7`, and `#8` can be closed.
+- Issue `#6` can be closed.
+- Issues `#7` and `#8` remain open until page switching, regenerate/history,
+  and failure/cancellation demo paths are complete.
 - The product can be demonstrated from upload through fake export.
 
 ## Implementation Started
 
-This plan starts with M1.2 because it is the highest-leverage dependency for
-API, worker, and frontend work.
+M2 should start with the frontend create-project, upload, parameter, and
+progress flow, then connect the workbench to the mock task artifacts.
