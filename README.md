@@ -49,6 +49,8 @@ Core variables:
 
 The local stack uses Docker Compose and provides:
 
+- `web` on `localhost:3000`
+- `api` on `localhost:8000`
 - `postgres` on `localhost:5432`
 - `redis` on `localhost:6379`
 - `minio` on `localhost:9000` with console on `localhost:9001`
@@ -63,6 +65,12 @@ or:
 
 ```powershell
 ./infra/scripts/local-up.ps1
+```
+
+To rebuild application images while starting the full stack:
+
+```powershell
+pnpm dev:docker
 ```
 
 ### Check Health
@@ -101,10 +109,26 @@ or:
 
 ## Current Status
 
-This commit sets up the engineering skeleton for issue `#2`:
+The project has completed the M1 backend foundation and is moving into the M2
+internal demo loop.
 
-- repository structure
-- base config templates
-- local Docker dependencies
-- bootstrap scripts
-- onboarding documentation
+Completed foundation work:
+
+- repository structure, local infra, and onboarding docs
+- frozen MVP scope and acceptance contract
+- core SQLAlchemy models and Alembic schema for projects, tasks, artifacts, and
+  assembly metadata
+- project, upload, task creation, and task status APIs
+- Celery/Redis worker backbone with mock stage progression
+- mock preview/export artifact records for end-to-end demo development
+- Docker Compose services for web, API, worker, database, Redis, and MinIO
+- frontend demo flow with project creation, image upload, task polling, mock
+  workbench previews, and PDF download
+
+Next development focus:
+
+- finish the remaining workbench behaviors, including paper-net page switching,
+  regenerate controls, and project artifact history
+- expand the mock pipeline demo to cover failure and cancellation paths
+- replace mock stages with real preprocessing, mesh, unfolding, and export
+  modules once the demo loop contracts are stable

@@ -185,6 +185,48 @@ All API errors should use this shape:
 }
 ```
 
+## Task Status Response Shape
+
+`GET /api/tasks/{task_id}` returns the task state plus any available demo or
+pipeline outputs:
+
+```json
+{
+  "task_id": "00000000-0000-0000-0000-000000000001",
+  "project_id": "00000000-0000-0000-0000-000000000002",
+  "status": "completed",
+  "stage": "completed",
+  "progress": 100,
+  "error_code": null,
+  "error_message": null,
+  "artifacts": [
+    {
+      "artifact_id": "00000000-0000-0000-0000-000000000003",
+      "kind": "export_pdf",
+      "storage_key": "projects/.../tasks/.../exports/.../mock-papercraft.pdf",
+      "download_url": "/api/artifacts/00000000-0000-0000-0000-000000000003/download",
+      "mime_type": "application/pdf",
+      "file_size": 8192,
+      "metadata": {
+        "mock": true,
+        "printable": true
+      },
+      "created_at": "2026-05-08T00:00:00Z"
+    }
+  ],
+  "assembly_metadata": {
+    "page_count": 3,
+    "part_count": 12,
+    "difficulty_score": 3,
+    "estimated_build_minutes": 45,
+    "metadata": {
+      "mock": true,
+      "pair_numbering": true
+    }
+  }
+}
+```
+
 ## Initial Error Code Catalog
 
 Upload and validation:
@@ -199,6 +241,7 @@ Project and task:
 
 - `PROJECT_NOT_FOUND`
 - `TASK_NOT_FOUND`
+- `ARTIFACT_NOT_FOUND`
 - `TASK_INVALID_STATE`
 - `TASK_RETRY_NOT_ALLOWED`
 

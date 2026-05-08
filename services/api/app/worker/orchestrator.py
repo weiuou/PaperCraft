@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models import GenerationTask, TaskEvent
-from app.domain.enums import ErrorCode, TaskEventType, TaskStage, TaskStatus
+from app.db.models import Artifact, AssemblyMetadata, GenerationTask, TaskEvent
+from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
+from app.services.storage_paths import ArtifactPathGroup, task_artifact_key
 
 logger = logging.getLogger("papercraft.worker")
 
@@ -169,6 +170,7 @@ def run_generation_pipeline(
         task.status = TaskStatus.COMPLETED.value
         task.progress = 100
         task.finished_at = datetime.now(UTC)
+        _create_mock_outputs(db, task)
         _add_event(db, task, TaskEventType.COMPLETED, "Task completed.", stage=TaskStage.COMPLETED.value)
         db.commit()
         logger.info(
@@ -241,5 +243,69 @@ def _add_event(
             event_type=event_type.value,
             message=message,
             event_metadata=metadata or {},
+        )
+    )
+
+
+def _create_mock_outputs(db: Session, task: GenerationTask) -> None:
+    if task.assembly_metadata is not None:
+        return
+
+    outputs = (
+        (
+            ArtifactKind.PREVIEW_MODEL,
+            ArtifactPathGroup.PREVIEWS,
+            "mock-preview-model.glb",
+            "model/gltf-binary",
+            4096,
+            {"mock": True, "label": "3D preview placeholder"},
+        ),
+        (
+            ArtifactKind.NET_JSON,
+            ArtifactPathGroup.NETS,
+            "mock-paper-net.json",
+            "application/json",
+            2048,
+            {"mock": True, "pages": 3, "fold_lines": True, "glue_flaps": True},
+        ),
+        (
+            ArtifactKind.EXPORT_PDF,
+            ArtifactPathGroup.EXPORTS,
+            "mock-papercraft.pdf",
+            "application/pdf",
+            8192,
+            {"mock": True, "paper_size": "a4", "printable": True},
+        ),
+    )
+
+    for kind, group, filename, mime_type, file_size, metadata in outputs:
+        artifact_id = uuid.uuid4()
+        db.add(
+            Artifact(
+                id=artifact_id,
+                task_id=task.id,
+                kind=kind.value,
+                storage_key=task_artifact_key(task.project_id, task.id, group, artifact_id, filename),
+                mime_type=mime_type,
+                file_size=file_size,
+                artifact_metadata=metadata,
+            )
+        )
+
+    db.add(
+        AssemblyMetadata(
+            task_id=task.id,
+            page_count=3,
+            part_count=12,
+            difficulty_score=3,
+            estimated_build_minutes=45,
+            assembly_metadata={
+                "mock": True,
+                "instruction_sheet": True,
+                "cut_lines": True,
+                "fold_lines": True,
+                "glue_flaps": True,
+                "pair_numbering": True,
+            },
         )
     )
