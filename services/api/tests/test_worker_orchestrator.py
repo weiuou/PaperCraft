@@ -25,7 +25,12 @@ from app.worker.orchestrator import (
 
 @pytest.fixture(autouse=True)
 def mock_object_storage(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.worker.orchestrator.put_artifact_bytes", lambda *_args, **_kwargs: None)
+    stored_artifacts: dict[str, bytes] = {}
+    monkeypatch.setattr(
+        "app.worker.orchestrator.put_artifact_bytes",
+        lambda key, content, _content_type: stored_artifacts.update({key: content}),
+    )
+    monkeypatch.setattr("app.worker.orchestrator.get_artifact_bytes", lambda key: stored_artifacts[key])
     monkeypatch.setattr("app.worker.orchestrator.get_upload_bytes", lambda _key: _source_png_bytes())
 
 
@@ -134,6 +139,8 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
         ArtifactKind.PREPROCESS_MASK.value,
         ArtifactKind.PREPROCESS_CROP.value,
         ArtifactKind.BASE_MESH.value,
+        ArtifactKind.REPAIRED_MESH.value,
+        ArtifactKind.LOW_POLY_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
@@ -145,6 +152,10 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     base_mesh = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.BASE_MESH.value)
     assert base_mesh.artifact_metadata["real_stage"] == "model_generating"
     assert base_mesh.artifact_metadata["mesh_strategy"] == "pet_body_head"
+    repaired_mesh = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.REPAIRED_MESH.value)
+    assert repaired_mesh.artifact_metadata["real_stage"] == "paperability_optimizing"
+    low_poly_mesh = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.LOW_POLY_MESH.value)
+    assert low_poly_mesh.artifact_metadata["real_stage"] == "decimating"
     assert all(
         artifact.artifact_metadata["mock"]
         for artifact in artifacts
