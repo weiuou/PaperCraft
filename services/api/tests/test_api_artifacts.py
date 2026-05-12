@@ -131,6 +131,7 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
         ArtifactKind.LOW_POLY_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
+        ArtifactKind.NET_SVG.value,
         ArtifactKind.EXPORT_PDF.value,
     }
     assert all(artifact["download_url"].startswith("/api/artifacts/") for artifact in payload["artifacts"])
@@ -147,6 +148,10 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
     assert repaired_mesh["metadata"]["real_stage"] == "paperability_optimizing"
     low_poly_mesh = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.LOW_POLY_MESH.value)
     assert low_poly_mesh["metadata"]["real_stage"] == "decimating"
+    net_json = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.NET_JSON.value)
+    assert net_json["metadata"]["real_stage"] == "unfolding"
+    net_svg = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.NET_SVG.value)
+    assert net_svg["metadata"]["real_stage"] == "unfolding"
     assert payload["assembly_metadata"]["page_count"] == 3
     assert payload["assembly_metadata"]["metadata"]["pair_numbering"]
 
