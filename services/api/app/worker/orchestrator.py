@@ -24,6 +24,7 @@ from app.services.preprocessing import (
     preprocess_source_image,
 )
 from app.services.storage_paths import ArtifactPathGroup, task_artifact_key
+from app.services.unfolding import UnfoldingFailed, unfold_low_poly_mesh
 
 logger = logging.getLogger("papercraft.worker")
 
@@ -341,6 +342,8 @@ def _execute_stage(db: Session, task: GenerationTask, stage: TaskStage, executor
         return _run_paperability_stage(db, task)
     if stage == TaskStage.DECIMATING:
         return _run_decimation_stage(db, task)
+    if stage == TaskStage.UNFOLDING:
+        return _run_unfolding_stage(db, task)
     return executor.execute(task, stage)
 
 
@@ -447,6 +450,36 @@ def _run_decimation_stage(db: Session, task: GenerationTask) -> StageResult:
     )
 
 
+def _run_unfolding_stage(db: Session, task: GenerationTask) -> StageResult:
+    low_poly_mesh = _latest_artifact(db, task, ArtifactKind.LOW_POLY_MESH)
+    if task.param_config is None:
+        raise TaskExecutionError(
+            ErrorCode.UNFOLD_FAILED,
+            "Task parameter snapshot is required before unfolding.",
+        )
+    try:
+        content = get_artifact_bytes(low_poly_mesh.storage_key)
+        result = unfold_low_poly_mesh(
+            low_poly_mesh_content=content,
+            low_poly_mesh_metadata=low_poly_mesh.artifact_metadata,
+            paper_size=task.param_config.paper_size,
+            flap_size=task.param_config.flap_size,
+            max_pages=task.param_config.max_pages,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except UnfoldingFailed as exc:
+        raise TaskExecutionError(ErrorCode.UNFOLD_FAILED, str(exc)) from exc
+
+    for payload in result.artifacts:
+        _persist_mesh_artifact(db, task, payload, ArtifactPathGroup.NETS)
+    return StageResult(
+        progress=85,
+        message="Unfolding and layout completed.",
+        metadata=result.metadata,
+    )
+
+
 def _latest_artifact(db: Session, task: GenerationTask, kind: ArtifactKind) -> Artifact:
     artifact = db.scalar(
         select(Artifact)
@@ -454,7 +487,11 @@ def _latest_artifact(db: Session, task: GenerationTask, kind: ArtifactKind) -> A
         .order_by(Artifact.created_at.desc())
     )
     if artifact is None:
-        error_code = ErrorCode.PAPERABILITY_OPT_FAILED if kind == ArtifactKind.BASE_MESH else ErrorCode.DECIMATE_FAILED
+        error_code = {
+            ArtifactKind.BASE_MESH: ErrorCode.PAPERABILITY_OPT_FAILED,
+            ArtifactKind.REPAIRED_MESH: ErrorCode.DECIMATE_FAILED,
+            ArtifactKind.LOW_POLY_MESH: ErrorCode.UNFOLD_FAILED,
+        }.get(kind, ErrorCode.INTERNAL_ERROR)
         raise TaskExecutionError(error_code, f"{kind.value} artifact is required before this stage.")
     return artifact
 

@@ -7,11 +7,10 @@ Last updated: 2026-05-12
 M3 replaces the M2 mock pipeline one stage at a time while keeping the demo loop
 usable after each merge. Completed slices include issue `#9`: real image
 preprocessing, and issue `#10`: deterministic, category-constrained base mesh
-generation. The current active slice is issue `#11`: paperability optimization
-and constrained decimation.
+generation, and issue `#11`: paperability optimization and constrained
+decimation. The current active slice is issue `#12`: unfolding and page layout.
 
-Unfolding/layout and final PDF export remain later M3 work under issues `#12`
-and `#13`.
+Final PDF export remains later M3 work under issue `#13`.
 
 ## GitHub Alignment
 
@@ -20,8 +19,9 @@ and `#13`.
 - Tracking issue `#16` should mark `#7` and `#8` complete.
 - Issue `#9` is complete after PR `#24`.
 - Issue `#10` is complete after PR `#25`.
-- Issue `#11` is the active M3 entry point after base mesh generation.
-- Issues `#12` and `#13` remain open for later M3 sequencing.
+- Issue `#11` is complete after PR `#26`.
+- Issue `#12` is the active M3 entry point after decimation.
+- Issue `#13` remains open for later M3 sequencing.
 
 ## Completed Slice: `#9` Image Preprocessing
 
@@ -59,7 +59,7 @@ and `#13`.
 - Continue to run M2 mock paperability, unfolding, and export stages after base
   mesh generation succeeds.
 
-## Active Slice: `#11` Paperability And Decimation
+## Completed Slice: `#11` Paperability And Decimation
 
 - Use deterministic Python OBJ processing; do not add external mesh libraries
   for this first pass.
@@ -73,6 +73,19 @@ and `#13`.
 - Continue to run M2 mock unfolding and export stages after low-poly mesh
   generation succeeds.
 
+## Active Slice: `#12` Unfolding And Layout
+
+- Use deterministic Python OBJ processing; do not add external unfolding
+  libraries for this first pass.
+- Read the `low_poly_mesh` OBJ artifact and metadata from the current task.
+- Generate a structured `net_json` artifact with pages, parts, cut/fold line
+  counts, glue flap counts, pair numbering, and layout positions.
+- Generate a `net_svg` intermediate artifact for visual inspection and future
+  export work.
+- Apply a first fallback simplification path by increasing parts per page when
+  the calculated layout would exceed `max_pages`.
+- Continue to run M2 mock export after unfolding succeeds.
+
 ## Failure Contract
 
 - If no usable subject can be detected, fail the task with
@@ -85,6 +98,8 @@ and `#13`.
   `PAPERABILITY_OPT_FAILED`.
 - If constrained decimation cannot produce a low-poly mesh, fail with
   `DECIMATE_FAILED`.
+- If unfolding or page layout cannot produce a net within budget, fail with
+  `UNFOLD_FAILED`.
 - Storage read/write errors continue to use the existing storage error codes so
   infrastructure failures stay distinguishable from algorithm failures.
 
@@ -121,6 +136,15 @@ For `#11`:
 - The task continues into later unfolding/export stages after constrained
   decimation succeeds.
 
+For `#12`:
+
+- Positive samples produce `net_json` and `net_svg` artifacts.
+- `net_json` includes fold lines, cut lines, glue flaps, pair numbering, and
+  page layout data.
+- Page overflow can trigger a fallback simplification path.
+- Unfolding failures return `UNFOLD_FAILED`.
+- The task continues into the later export stage after unfolding succeeds.
+
 ## Test Plan
 
 - Unit-test Pillow preprocessing for successful mask/crop generation and
@@ -135,6 +159,8 @@ For `#11`:
 - Unit-test paperability repair metadata and constrained decimation budgets.
 - Worker-test that `paperability_optimizing` writes `repaired_mesh` and
   `decimating` writes `low_poly_mesh`.
+- Unit-test unfolding output for structured net JSON and SVG artifacts.
+- Worker-test that `unfolding` writes `net_json` and `net_svg`.
 - Run:
   - `uv run --extra dev pytest`
   - `pnpm --filter @papercraft/web typecheck`

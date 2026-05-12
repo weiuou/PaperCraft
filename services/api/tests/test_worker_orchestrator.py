@@ -143,6 +143,7 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
         ArtifactKind.LOW_POLY_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
+        ArtifactKind.NET_SVG.value,
         ArtifactKind.EXPORT_PDF.value,
     }
     preprocessing_artifacts = [
@@ -156,10 +157,14 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     assert repaired_mesh.artifact_metadata["real_stage"] == "paperability_optimizing"
     low_poly_mesh = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.LOW_POLY_MESH.value)
     assert low_poly_mesh.artifact_metadata["real_stage"] == "decimating"
+    net_json = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.NET_JSON.value)
+    assert net_json.artifact_metadata["real_stage"] == "unfolding"
+    net_svg = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.NET_SVG.value)
+    assert net_svg.artifact_metadata["real_stage"] == "unfolding"
     assert all(
         artifact.artifact_metadata["mock"]
         for artifact in artifacts
-        if artifact.kind in {ArtifactKind.NET_JSON.value, ArtifactKind.EXPORT_PDF.value}
+        if artifact.kind == ArtifactKind.EXPORT_PDF.value
     )
     assert all(str(task_id) in artifact.storage_key for artifact in artifacts)
 
