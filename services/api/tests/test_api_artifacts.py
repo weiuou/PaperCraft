@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Artifact, GenerationTask, Project, SourceImage, User
+from app.db.models import Artifact, GenerationTask, ParamConfig, Project, SourceImage, User
 from app.domain.enums import ArtifactKind, ProjectCategory, ProjectStatus, TaskStage, TaskStatus
 from app.main import create_app
 from app.worker.orchestrator import run_generation_pipeline
@@ -82,6 +82,20 @@ def _create_completed_mock_task(session_factory: sessionmaker[Session]) -> uuid.
             progress=0,
         )
         db.add(task)
+        db.flush()
+        db.add(
+            ParamConfig(
+                task_id=task.id,
+                category=ProjectCategory.PET.value,
+                complexity_level="balanced",
+                target_poly_count=300,
+                paper_size="a4",
+                texture_mode="print_friendly",
+                flap_size=5,
+                max_pages=12,
+                build_difficulty_mode="standard",
+            )
+        )
         db.commit()
         task_id = task.id
         run_generation_pipeline(db, task_id)
@@ -111,6 +125,7 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
     assert {artifact["kind"] for artifact in payload["artifacts"]} == {
         ArtifactKind.PREPROCESS_MASK.value,
         ArtifactKind.PREPROCESS_CROP.value,
+        ArtifactKind.BASE_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
@@ -122,6 +137,9 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
         if artifact["kind"] in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
     ]
     assert all(artifact["metadata"]["real_stage"] == "preprocessing" for artifact in preprocess_artifacts)
+    base_mesh = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.BASE_MESH.value)
+    assert base_mesh["metadata"]["real_stage"] == "model_generating"
+    assert base_mesh["download_url"].startswith("/api/artifacts/")
     assert payload["assembly_metadata"]["page_count"] == 3
     assert payload["assembly_metadata"]["metadata"]["pair_numbering"]
 

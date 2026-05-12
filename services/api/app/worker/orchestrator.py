@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Artifact, AssemblyMetadata, GenerationTask, SourceImage, TaskEvent
 from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
+from app.services.mesh_generation import MeshGenerationFailed, generate_base_mesh
 from app.services.mock_artifacts import mock_artifact_content
 from app.services.object_storage import ObjectStorageError, get_upload_bytes, put_artifact_bytes
 from app.services.preprocessing import (
@@ -158,7 +159,7 @@ def run_generation_pipeline(
             if mock_failure is not None:
                 raise TaskExecutionError(mock_failure, f"Mock failure at {stage.value}.")
 
-            result = _run_preprocessing_stage(db, task) if stage == TaskStage.PREPROCESSING else executor.execute(task, stage)
+            result = _execute_stage(db, task, stage, executor)
             task.progress = result.progress
             _add_event(
                 db,
@@ -325,6 +326,68 @@ def _run_preprocessing_stage(db: Session, task: GenerationTask) -> StageResult:
     )
 
 
+def _execute_stage(db: Session, task: GenerationTask, stage: TaskStage, executor: MockStageExecutor) -> StageResult:
+    if stage == TaskStage.PREPROCESSING:
+        return _run_preprocessing_stage(db, task)
+    if stage == TaskStage.MODEL_GENERATING:
+        return _run_model_generation_stage(db, task)
+    return executor.execute(task, stage)
+
+
+def _run_model_generation_stage(db: Session, task: GenerationTask) -> StageResult:
+    preprocess_crop = db.scalar(
+        select(Artifact)
+        .where(Artifact.task_id == task.id, Artifact.kind == ArtifactKind.PREPROCESS_CROP.value)
+        .order_by(Artifact.created_at.desc())
+    )
+    if preprocess_crop is None:
+        raise TaskExecutionError(
+            ErrorCode.MODEL_GEN_FAILED,
+            "Preprocessing crop artifact is required before model generation.",
+        )
+    if task.param_config is None:
+        raise TaskExecutionError(
+            ErrorCode.MODEL_GEN_FAILED,
+            "Task parameter snapshot is required before model generation.",
+        )
+
+    try:
+        result = generate_base_mesh(
+            category=task.param_config.category,
+            target_poly_count=task.param_config.target_poly_count,
+            preprocessing_metadata=preprocess_crop.artifact_metadata,
+        )
+    except (MeshGenerationFailed, ValueError) as exc:
+        raise TaskExecutionError(ErrorCode.MODEL_GEN_FAILED, str(exc)) from exc
+
+    for payload in result.artifacts:
+        artifact_id = uuid.uuid4()
+        path_group = ArtifactPathGroup.MESHES if payload.kind == ArtifactKind.BASE_MESH else ArtifactPathGroup.PREVIEWS
+        storage_key = task_artifact_key(task.project_id, task.id, path_group, artifact_id, payload.filename)
+        try:
+            put_artifact_bytes(storage_key, payload.content, payload.mime_type)
+        except ObjectStorageError as exc:
+            raise TaskExecutionError(exc.code, exc.message) from exc
+
+        db.add(
+            Artifact(
+                id=artifact_id,
+                task_id=task.id,
+                kind=payload.kind.value,
+                storage_key=storage_key,
+                mime_type=payload.mime_type,
+                file_size=len(payload.content),
+                artifact_metadata=payload.metadata,
+            )
+        )
+
+    return StageResult(
+        progress=35,
+        message="Base mesh generation completed.",
+        metadata=result.metadata,
+    )
+
+
 def _add_event(
     db: Session,
     task: GenerationTask,
@@ -348,6 +411,7 @@ def _add_event(
 def _create_mock_outputs(db: Session, task: GenerationTask) -> None:
     if task.assembly_metadata is not None:
         return
+    existing_kinds = set(db.scalars(select(Artifact.kind).where(Artifact.task_id == task.id)).all())
 
     outputs = (
         (
@@ -377,6 +441,8 @@ def _create_mock_outputs(db: Session, task: GenerationTask) -> None:
     )
 
     for kind, group, filename, mime_type, file_size, metadata in outputs:
+        if kind.value in existing_kinds:
+            continue
         artifact_id = uuid.uuid4()
         content = mock_artifact_content(artifact_id, kind.value)
         storage_key = task_artifact_key(task.project_id, task.id, group, artifact_id, filename)
