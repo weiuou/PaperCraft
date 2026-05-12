@@ -25,17 +25,36 @@ def put_artifact_bytes(key: str, content: bytes, content_type: str) -> None:
     _put_bytes(settings.s3_bucket_artifacts, key, content, content_type)
 
 
+def get_upload_bytes(key: str) -> bytes:
+    settings = get_settings()
+    return _get_bytes(
+        settings.s3_bucket_uploads,
+        key,
+        ErrorCode.STORAGE_READ_FAILED,
+        f"Could not read upload from storage: {key}",
+    )
+
+
 def get_artifact_bytes(key: str) -> bytes:
     settings = get_settings()
+    return _get_bytes(
+        settings.s3_bucket_artifacts,
+        key,
+        ErrorCode.STORAGE_READ_FAILED,
+        f"Could not read artifact from storage: {key}",
+    )
+
+
+def _get_bytes(bucket: str, key: str, code: ErrorCode, message: str) -> bytes:
     try:
-        response = _client().get_object(settings.s3_bucket_artifacts, key)
+        response = _client().get_object(bucket, key)
         try:
             return response.read()
         finally:
             response.close()
             response.release_conn()
     except S3Error as exc:
-        raise ObjectStorageError(ErrorCode.STORAGE_READ_FAILED, f"Could not read artifact from storage: {key}") from exc
+        raise ObjectStorageError(code, message) from exc
 
 
 def _put_bytes(bucket: str, key: str, content: bytes, content_type: str) -> None:
