@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db import models  # noqa: F401
-from app.db.models import Artifact, AssemblyMetadata, GenerationTask, Project, SourceImage, TaskEvent, User
+from app.db.models import Artifact, AssemblyMetadata, GenerationTask, ParamConfig, Project, SourceImage, TaskEvent, User
 from app.domain.enums import ArtifactKind, ErrorCode, ProjectCategory, ProjectStatus, TaskEventType, TaskStage, TaskStatus
 from app.worker.orchestrator import (
     MockStageExecutor,
@@ -77,6 +77,20 @@ def _create_task(db: Session, status: TaskStatus = TaskStatus.QUEUED) -> uuid.UU
         progress=0,
     )
     db.add(task)
+    db.flush()
+    db.add(
+        ParamConfig(
+            task_id=task.id,
+            category=ProjectCategory.PET.value,
+            complexity_level="balanced",
+            target_poly_count=300,
+            paper_size="a4",
+            texture_mode="print_friendly",
+            flap_size=5,
+            max_pages=12,
+            build_difficulty_mode="standard",
+        )
+    )
     db.commit()
     return task.id
 
@@ -119,6 +133,7 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     assert {artifact.kind for artifact in artifacts} == {
         ArtifactKind.PREPROCESS_MASK.value,
         ArtifactKind.PREPROCESS_CROP.value,
+        ArtifactKind.BASE_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
@@ -127,10 +142,13 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
         artifact for artifact in artifacts if artifact.kind in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
     ]
     assert all(artifact.artifact_metadata["real_stage"] == "preprocessing" for artifact in preprocessing_artifacts)
+    base_mesh = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.BASE_MESH.value)
+    assert base_mesh.artifact_metadata["real_stage"] == "model_generating"
+    assert base_mesh.artifact_metadata["mesh_strategy"] == "pet_body_head"
     assert all(
         artifact.artifact_metadata["mock"]
         for artifact in artifacts
-        if artifact.kind not in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
+        if artifact.kind in {ArtifactKind.NET_JSON.value, ArtifactKind.EXPORT_PDF.value}
     )
     assert all(str(task_id) in artifact.storage_key for artifact in artifacts)
 
