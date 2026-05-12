@@ -7,10 +7,13 @@ import {
   Download,
   FileJson,
   FileText,
+  History,
   Layers,
   Loader2,
   Play,
   RefreshCw,
+  RotateCcw,
+  Square,
   Upload,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +22,11 @@ import type {
   ArtifactResponse,
   BuildDifficultyMode,
   ComplexityLevel,
+  CreateTaskRequest,
   ImageResponse,
   PaperSize,
   ProjectCategory,
+  ProjectTaskHistoryResponse,
   ProjectResponse,
   TaskCreatedResponse,
   TaskStage,
@@ -44,6 +49,16 @@ const stages: Array<{ label: string; value: TaskStage }> = [
   { label: "Unfold", value: "unfolding" },
   { label: "Export", value: "exporting" },
   { label: "Done", value: "completed" },
+];
+
+const mockFailureStages: Array<{ label: string; value: TaskStage | "none" }> = [
+  { label: "No mock failure", value: "none" },
+  { label: "Preprocessing fails", value: "preprocessing" },
+  { label: "Model generation fails", value: "model_generating" },
+  { label: "Paperability fails", value: "paperability_optimizing" },
+  { label: "Decimation fails", value: "decimating" },
+  { label: "Unfolding fails", value: "unfolding" },
+  { label: "Export fails", value: "exporting" },
 ];
 
 type DraftParams = {
@@ -90,9 +105,12 @@ export default function StudioPage() {
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [image, setImage] = useState<ImageResponse | null>(null);
   const [task, setTask] = useState<TaskStatusResponse | null>(null);
+  const [taskHistory, setTaskHistory] = useState<TaskStatusResponse[]>([]);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [netPreview, setNetPreview] = useState<PaperNetPreview | null>(null);
   const [netPreviewError, setNetPreviewError] = useState<string | null>(null);
+  const [selectedNetPageIndex, setSelectedNetPageIndex] = useState(0);
+  const [mockFailureStage, setMockFailureStage] = useState<TaskStage | "none">("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -130,10 +148,15 @@ export default function StudioPage() {
 
   const netArtifact = artifactsByKind.net_json?.[0];
 
+  const canCancel = task?.status === "queued" || task?.status === "in_progress";
+  const canRetry = task?.status === "failed" || task?.status === "canceled";
+  const canRegenerate = project !== null && image !== null && !canCancel;
+
   useEffect(() => {
     if (!netArtifact) {
       setNetPreview(null);
       setNetPreviewError(null);
+      setSelectedNetPageIndex(0);
       return;
     }
 
@@ -149,6 +172,7 @@ export default function StudioPage() {
         if (!ignore) {
           setNetPreview(payload);
           setNetPreviewError(null);
+          setSelectedNetPageIndex(0);
         }
       })
       .catch((caught) => {
@@ -163,9 +187,25 @@ export default function StudioPage() {
     };
   }, [netArtifact?.download_url]);
 
-  async function loadTask(taskId: string) {
+  async function loadTask(taskId: string, options: { syncHistory?: boolean } = {}) {
     const nextTask = await requestJson<TaskStatusResponse>(`/backend/tasks/${taskId}`);
     setTask(nextTask);
+    if (options.syncHistory !== false && project) {
+      await loadProjectTasks(project.project_id);
+    }
+  }
+
+  async function loadProjectTasks(projectId: string) {
+    const history = await requestJson<ProjectTaskHistoryResponse>(`/backend/projects/${projectId}/tasks`);
+    setTaskHistory(history.tasks);
+    return history.tasks;
+  }
+
+  function taskPayload(): CreateTaskRequest {
+    return {
+      ...params,
+      mock_failure_stage: mockFailureStage === "none" ? null : mockFailureStage,
+    };
   }
 
   async function submitFlow(event: FormEvent<HTMLFormElement>) {
@@ -183,6 +223,7 @@ export default function StudioPage() {
         body: JSON.stringify({ title, category }),
       });
       setProject(createdProject);
+      setTaskHistory([]);
 
       const formData = new FormData();
       formData.append("file", file);
@@ -194,11 +235,76 @@ export default function StudioPage() {
 
       const createdTask = await requestJson<TaskCreatedResponse>(`/backend/projects/${createdProject.project_id}/tasks`, {
         method: "POST",
-        body: JSON.stringify(params),
+        body: JSON.stringify(taskPayload()),
       });
-      await loadTask(createdTask.task_id);
+      await loadTask(createdTask.task_id, { syncHistory: false });
+      await loadProjectTasks(createdProject.project_id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The generation flow failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerateTask() {
+    if (!project) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const createdTask = await requestJson<TaskCreatedResponse>(`/backend/projects/${project.project_id}/tasks`, {
+        method: "POST",
+        body: JSON.stringify(taskPayload()),
+      });
+      await loadTask(createdTask.task_id, { syncHistory: false });
+      await loadProjectTasks(project.project_id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Regeneration failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelTask() {
+    if (!task) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const canceledTask = await requestJson<TaskStatusResponse>(`/backend/tasks/${task.task_id}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setTask(canceledTask);
+      if (project) {
+        await loadProjectTasks(project.project_id);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Cancellation failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryTask() {
+    if (!task) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const retriedTask = await requestJson<TaskStatusResponse>(`/backend/tasks/${task.task_id}/retry`, {
+        method: "POST",
+        body: JSON.stringify({ stage: task.stage === "completed" ? "preprocessing" : task.stage }),
+      });
+      setTask(retriedTask);
+      if (project) {
+        await loadProjectTasks(project.project_id);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Retry failed.");
     } finally {
       setBusy(false);
     }
@@ -346,12 +452,39 @@ export default function StudioPage() {
                 onChange={(event) => setParams({ ...params, flap_size: Number(event.target.value) })}
               />
             </label>
+            <label className="field">
+              <span>Mock outcome</span>
+              <select
+                value={mockFailureStage}
+                onChange={(event) => setMockFailureStage(event.target.value as TaskStage | "none")}
+              >
+                {mockFailureStages.map((stage) => (
+                  <option key={stage.value} value={stage.value}>
+                    {stage.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </section>
 
           <button className="primary-action" disabled={busy} type="submit">
             {busy ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
             Start generation
           </button>
+          <div className="action-row">
+            <button className="secondary-action" disabled={!canRegenerate || busy} type="button" onClick={regenerateTask}>
+              <RotateCcw size={17} />
+              Regenerate
+            </button>
+            <button className="secondary-action muted-action" disabled={!canCancel || busy} type="button" onClick={cancelTask}>
+              <Square size={15} />
+              Cancel
+            </button>
+            <button className="secondary-action muted-action" disabled={!canRetry || busy} type="button" onClick={retryTask}>
+              <RefreshCw size={17} />
+              Retry
+            </button>
+          </div>
           {error ? (
             <div className="error-strip">
               <AlertCircle size={17} />
@@ -401,6 +534,31 @@ export default function StudioPage() {
             <Metric label="Task" value={task ? shortId(task.task_id) : "-"} />
           </div>
 
+          <div className="history-panel">
+            <div className="section-title">
+              <History size={18} />
+              <h2>Task history</h2>
+            </div>
+            <div className="history-list">
+              {taskHistory.length > 0 ? (
+                taskHistory.map((historyTask) => (
+                  <button
+                    className={task?.task_id === historyTask.task_id ? "history-item is-active" : "history-item"}
+                    key={historyTask.task_id}
+                    type="button"
+                    onClick={() => setTask(historyTask)}
+                  >
+                    <strong>{shortId(historyTask.task_id)}</strong>
+                    <span>{formatStatus(historyTask.status)}</span>
+                    <span>{historyTask.progress}%</span>
+                  </button>
+                ))
+              ) : (
+                <p className="empty-copy">Task runs will appear after the first generation starts.</p>
+              )}
+            </div>
+          </div>
+
           <div className="workbench">
             <PreviewPane
               artifact={artifactsByKind.preview_model?.[0]}
@@ -411,6 +569,8 @@ export default function StudioPage() {
             <NetPreviewPane
               artifact={artifactsByKind.net_json?.[0]}
               error={netPreviewError}
+              onPageChange={setSelectedNetPageIndex}
+              pageIndex={selectedNetPageIndex}
               preview={netPreview}
             />
             <div className="export-pane">
@@ -440,13 +600,17 @@ export default function StudioPage() {
 function NetPreviewPane({
   artifact,
   error,
+  onPageChange,
+  pageIndex,
   preview,
 }: {
   artifact?: ArtifactResponse;
   error: string | null;
+  onPageChange: (pageIndex: number) => void;
+  pageIndex: number;
   preview: PaperNetPreview | null;
 }) {
-  const firstPage = preview?.pages[0];
+  const page = preview?.pages[pageIndex] ?? preview?.pages[0];
   return (
     <div className="preview-pane net">
       <div className="section-title">
@@ -454,15 +618,27 @@ function NetPreviewPane({
         <h2>Paper net</h2>
       </div>
       <div className="net-preview-surface">
-        {firstPage ? (
+        {page ? (
           <>
+            <div className="page-tabs" aria-label="Paper net pages">
+              {preview?.pages.map((netPage, index) => (
+                <button
+                  className={index === pageIndex ? "is-active" : ""}
+                  key={netPage.page}
+                  type="button"
+                  onClick={() => onPageChange(index)}
+                >
+                  Page {netPage.page}
+                </button>
+              ))}
+            </div>
             <div className="paper-sheet">
               <div className="sheet-header">
-                <strong>Page {firstPage.page}</strong>
-                <span>{firstPage.paper_size.toUpperCase()}</span>
+                <strong>Page {page.page}</strong>
+                <span>{page.paper_size.toUpperCase()}</span>
               </div>
               <div className="paper-parts">
-                {firstPage.parts.map((part, index) => (
+                {page.parts.map((part, index) => (
                   <div className={`paper-part part-${index + 1}`} key={part.id}>
                     <span>{part.label}</span>
                   </div>
@@ -470,7 +646,7 @@ function NetPreviewPane({
               </div>
             </div>
             <div className="part-list">
-              {firstPage.parts.map((part) => (
+              {page.parts.map((part) => (
                 <div className="part-row" key={part.id}>
                   <strong>{part.label}</strong>
                   <span>{part.fold_lines} folds</span>

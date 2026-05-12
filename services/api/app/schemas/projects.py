@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.enums import (
     BuildDifficultyMode,
@@ -56,6 +56,16 @@ class CreateTaskRequest(BaseModel):
     flap_size: int = Field(gt=0)
     max_pages: int = Field(gt=0)
     build_difficulty_mode: BuildDifficultyMode = BuildDifficultyMode.STANDARD
+    mock_failure_stage: TaskStage | None = None
+
+    @field_validator("mock_failure_stage")
+    @classmethod
+    def mock_failure_stage_must_be_executable(cls, value: TaskStage | None) -> TaskStage | None:
+        if value is None:
+            return value
+        if value in {TaskStage.UPLOAD_VALIDATION, TaskStage.COMPLETED}:
+            raise ValueError("mock_failure_stage must be an execution stage")
+        return value
 
 
 class TaskCreatedResponse(BaseModel):

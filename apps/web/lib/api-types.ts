@@ -47,6 +47,17 @@ export type TaskCreatedResponse = {
   progress: number;
 };
 
+export type CreateTaskRequest = {
+  complexity_level: ComplexityLevel;
+  target_poly_count: number;
+  paper_size: PaperSize;
+  texture_mode: TextureMode;
+  flap_size: number;
+  max_pages: number;
+  build_difficulty_mode: BuildDifficultyMode;
+  mock_failure_stage?: TaskStage | null;
+};
+
 export type ArtifactResponse = {
   artifact_id: string;
   kind: "source_image" | "preprocess_mask" | "preprocess_crop" | "base_mesh" | "repaired_mesh" | "low_poly_mesh" | "net_json" | "net_svg" | "preview_image" | "preview_model" | "export_pdf";
@@ -78,6 +89,10 @@ export type TaskStatusResponse = {
   finished_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectTaskHistoryResponse = {
+  tasks: TaskStatusResponse[];
 };
 
 export type ApiErrorResponse = {

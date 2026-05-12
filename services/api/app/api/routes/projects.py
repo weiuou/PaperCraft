@@ -19,8 +19,11 @@ from app.schemas.projects import (
     ProjectResponse,
     TaskCreatedResponse,
 )
+from app.schemas.tasks import ProjectTaskHistoryResponse
+from app.services.object_storage import ObjectStorageError, put_upload_bytes
 from app.services.task_dispatch import enqueue_generation_task
 from app.services.storage_paths import source_image_key
+from app.api.routes.tasks import task_status_response
 
 router = APIRouter(tags=["projects"])
 
@@ -101,6 +104,15 @@ def get_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> Project
     return _project_response(project, image_count=image_count or 0, task_count=task_count or 0)
 
 
+@router.get("/projects/{project_id}/tasks", response_model=ProjectTaskHistoryResponse)
+def list_project_tasks(project_id: uuid.UUID, db: Session = Depends(get_db)) -> ProjectTaskHistoryResponse:
+    project = _get_project_or_404(db, project_id)
+    tasks = db.scalars(
+        select(GenerationTask).where(GenerationTask.project_id == project.id).order_by(GenerationTask.created_at.desc())
+    ).all()
+    return ProjectTaskHistoryResponse(tasks=[task_status_response(db, task) for task in tasks])
+
+
 @router.post("/projects/{project_id}/images", response_model=ImageResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_image(
     project_id: uuid.UUID,
@@ -143,6 +155,16 @@ async def upload_project_image(
 
     image_id = uuid.uuid4()
     storage_key = source_image_key(project.id, image_id, file.filename or "upload")
+    try:
+        put_upload_bytes(storage_key, contents, file.content_type)
+    except ObjectStorageError as exc:
+        raise ApiError(
+            exc.code,
+            exc.message,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            details={"storage_key": storage_key},
+        ) from exc
+
     source_image = SourceImage(
         id=image_id,
         project_id=project.id,
@@ -205,7 +227,9 @@ def create_project_task(
             stage=TaskStage.UPLOAD_VALIDATION.value,
             event_type=TaskEventType.QUEUED.value,
             message="Task queued for generation.",
-            event_metadata={},
+            event_metadata=(
+                {"mock_failure_stage": payload.mock_failure_stage.value} if payload.mock_failure_stage is not None else {}
+            ),
         )
     )
     project.status = ProjectStatus.ACTIVE.value

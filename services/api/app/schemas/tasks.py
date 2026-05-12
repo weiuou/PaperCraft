@@ -44,3 +44,11 @@ class TaskStatusResponse(BaseModel):
     finished_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class RetryTaskRequest(BaseModel):
+    stage: TaskStage
+
+
+class ProjectTaskHistoryResponse(BaseModel):
+    tasks: list[TaskStatusResponse]

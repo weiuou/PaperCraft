@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.api.errors import ApiError, api_error_response
@@ -22,7 +23,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": ErrorCode.REQUEST_VALIDATION_FAILED.value,
                     "message": "Request validation failed.",
-                    "details": {"errors": exc.errors()},
+                    "details": {"errors": jsonable_encoder(exc.errors())},
                 }
             },
         )

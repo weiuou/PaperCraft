@@ -296,6 +296,12 @@ a {
   width: 100%;
 }
 
+.action-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .primary-action:disabled,
 .secondary-action:disabled,
 .icon-button:disabled {
@@ -307,6 +313,11 @@ a {
   background: var(--accent);
   color: #fff;
   padding: 0 14px;
+}
+
+.muted-action {
+  background: #eee6da;
+  color: var(--ink);
 }
 
 .error-strip {
@@ -448,6 +459,57 @@ a {
   grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
 }
 
+.history-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.history-item {
+  align-items: center;
+  background: #f8f2e9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  min-height: 76px;
+  padding: 10px;
+  text-align: left;
+}
+
+.history-item.is-active {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.history-item strong,
+.history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item strong {
+  font-size: 14px;
+}
+
+.history-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
 .preview-pane,
 .export-pane {
   border: 1px solid var(--line);
@@ -511,6 +573,29 @@ a {
   gap: 10px;
   min-height: 218px;
   padding: 12px;
+}
+
+.page-tabs {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+}
+
+.page-tabs button {
+  background: #f8f2e9;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 34px;
+}
+
+.page-tabs button.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .sheet-header {
@@ -641,7 +726,8 @@ a {
   }
 
   .two-col,
-  .stage-grid {
+  .stage-grid,
+  .action-row {
     grid-template-columns: 1fr;
   }
 

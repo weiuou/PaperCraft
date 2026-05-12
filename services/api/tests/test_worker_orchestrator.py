@@ -21,6 +21,11 @@ from app.worker.orchestrator import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_object_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.worker.orchestrator.put_artifact_bytes", lambda *_args, **_kwargs: None)
+
+
 @pytest.fixture()
 def db() -> Generator[Session]:
     engine = create_engine(
@@ -112,6 +117,34 @@ def test_pipeline_failure_writes_readable_error(db: Session) -> None:
     )
     assert failed_event is not None
     assert failed_event.event_metadata["error_code"] == ErrorCode.UNFOLD_FAILED.value
+
+
+def test_mock_failure_stage_from_task_event_fails_once_then_retry_succeeds(db: Session) -> None:
+    task_id = _create_task(db)
+    task = db.get(GenerationTask, task_id)
+    assert task is not None
+    db.add(
+        TaskEvent(
+            task_id=task.id,
+            stage=TaskStage.UPLOAD_VALIDATION.value,
+            event_type=TaskEventType.QUEUED.value,
+            message="Task queued with mock failure.",
+            event_metadata={"mock_failure_stage": TaskStage.UNFOLDING.value},
+        )
+    )
+    db.commit()
+
+    failed_task = run_generation_pipeline(db, task_id)
+
+    assert failed_task.status == TaskStatus.FAILED.value
+    assert failed_task.stage == TaskStage.UNFOLDING.value
+    assert failed_task.error_code == ErrorCode.UNFOLD_FAILED.value
+
+    assert request_retry_from_stage(db, task_id, TaskStage.UNFOLDING)
+    completed_task = run_generation_pipeline(db, task_id)
+
+    assert completed_task.status == TaskStatus.COMPLETED.value
+    assert completed_task.progress == 100
 
 
 def test_cancel_and_retry_hooks_update_task_state(db: Session) -> None:

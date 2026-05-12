@@ -4,10 +4,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Artifact, AssemblyMetadata, GenerationTask, TaskEvent
 from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
+from app.services.mock_artifacts import mock_artifact_content
+from app.services.object_storage import ObjectStorageError, put_artifact_bytes
 from app.services.storage_paths import ArtifactPathGroup, task_artifact_key
 
 logger = logging.getLogger("papercraft.worker")
@@ -87,7 +90,14 @@ def request_retry_from_stage(db: Session, task_id: uuid.UUID, stage: TaskStage) 
     task.error_message = None
     task.started_at = None
     task.finished_at = None
-    _add_event(db, task, TaskEventType.RETRY_REQUESTED, "Task retry requested.", stage=stage.value)
+    _add_event(
+        db,
+        task,
+        TaskEventType.RETRY_REQUESTED,
+        "Task retry requested.",
+        stage=stage.value,
+        metadata={"clear_mock_failure": True},
+    )
     db.commit()
     return True
 
@@ -138,6 +148,10 @@ def run_generation_pipeline(
                 stage.value,
                 extra={"task_id": str(task.id), "stage": stage.value},
             )
+
+            mock_failure = _mock_failure_for_stage(db, task, stage)
+            if mock_failure is not None:
+                raise TaskExecutionError(mock_failure, f"Mock failure at {stage.value}.")
 
             result = executor.execute(task, stage)
             task.progress = result.progress
@@ -227,6 +241,34 @@ def _stages_for_task(task: GenerationTask) -> Iterable[TaskStage]:
     return PIPELINE_EXECUTION_STAGES
 
 
+def _mock_failure_for_stage(db: Session, task: GenerationTask, stage: TaskStage) -> ErrorCode | None:
+    events = db.scalars(
+        select(TaskEvent)
+        .where(TaskEvent.task_id == task.id)
+        .order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc())
+    ).all()
+    if any(event.event_type == TaskEventType.RETRY_REQUESTED.value for event in events):
+        return None
+    requested_stage = next(
+        (
+            event.event_metadata.get("mock_failure_stage")
+            for event in events
+            if event.event_type == TaskEventType.QUEUED.value and event.event_metadata.get("mock_failure_stage")
+        ),
+        None,
+    )
+    if requested_stage != stage.value:
+        return None
+    return {
+        TaskStage.PREPROCESSING: ErrorCode.PREPROCESS_FAILED,
+        TaskStage.MODEL_GENERATING: ErrorCode.MODEL_GEN_FAILED,
+        TaskStage.PAPERABILITY_OPTIMIZING: ErrorCode.PAPERABILITY_OPT_FAILED,
+        TaskStage.DECIMATING: ErrorCode.DECIMATE_FAILED,
+        TaskStage.UNFOLDING: ErrorCode.UNFOLD_FAILED,
+        TaskStage.EXPORTING: ErrorCode.EXPORT_FAILED,
+    }[stage]
+
+
 def _add_event(
     db: Session,
     task: GenerationTask,
@@ -280,14 +322,21 @@ def _create_mock_outputs(db: Session, task: GenerationTask) -> None:
 
     for kind, group, filename, mime_type, file_size, metadata in outputs:
         artifact_id = uuid.uuid4()
+        content = mock_artifact_content(artifact_id, kind.value)
+        storage_key = task_artifact_key(task.project_id, task.id, group, artifact_id, filename)
+        try:
+            put_artifact_bytes(storage_key, content, mime_type)
+        except ObjectStorageError as exc:
+            raise TaskExecutionError(exc.code, exc.message) from exc
+
         db.add(
             Artifact(
                 id=artifact_id,
                 task_id=task.id,
                 kind=kind.value,
-                storage_key=task_artifact_key(task.project_id, task.id, group, artifact_id, filename),
+                storage_key=storage_key,
                 mime_type=mime_type,
-                file_size=file_size,
+                file_size=len(content) or file_size,
                 artifact_metadata=metadata,
             )
         )

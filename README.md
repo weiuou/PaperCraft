@@ -121,14 +121,14 @@ Completed foundation work:
 - project, upload, task creation, and task status APIs
 - Celery/Redis worker backbone with mock stage progression
 - mock preview/export artifact records for end-to-end demo development
+- object storage-backed source image uploads and mock artifact downloads through
+  the local MinIO stack
 - Docker Compose services for web, API, worker, database, Redis, and MinIO
 - frontend demo flow with project creation, image upload, task polling, mock
-  workbench previews, and PDF download
+  workbench previews, paper-net page switching, task history, regeneration,
+  cancellation, retry, controlled mock failures, and PDF download
 
 Next development focus:
 
-- finish the remaining workbench behaviors, including paper-net page switching,
-  regenerate controls, and project artifact history
-- expand the mock pipeline demo to cover failure and cancellation paths
-- replace mock stages with real preprocessing, mesh, unfolding, and export
-  modules once the demo loop contracts are stable
+- start M3 with real preprocessing, then mesh, unfolding, and export modules
+- build regression samples and observability around the real pipeline stages

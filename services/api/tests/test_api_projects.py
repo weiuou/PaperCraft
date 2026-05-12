@@ -23,6 +23,7 @@ def dispatched_task_ids(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         task_ids.append(str(task_id))
 
     monkeypatch.setattr("app.api.routes.projects.enqueue_generation_task", record_enqueue)
+    monkeypatch.setattr("app.api.routes.projects.put_upload_bytes", lambda *_args, **_kwargs: None)
     return task_ids
 
 
@@ -116,6 +117,10 @@ def test_project_upload_task_happy_path(client: TestClient, dispatched_task_ids:
     assert list_response.json()["projects"][0]["image_count"] == 1
     assert list_response.json()["projects"][0]["task_count"] == 1
 
+    history_response = client.get(f"/api/projects/{project_id}/tasks")
+    assert history_response.status_code == 200
+    assert history_response.json()["tasks"][0]["task_id"] == task_payload["task_id"]
+
 
 def test_missing_project_returns_stable_error(client: TestClient) -> None:
     response = client.get("/api/projects/00000000-0000-0000-0000-000000000001")
@@ -194,3 +199,45 @@ def test_task_not_found_returns_stable_error(client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_create_task_accepts_mock_failure_stage(client: TestClient, dispatched_task_ids: list[str]) -> None:
+    project_id = _create_project(client)
+
+    response = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "complexity_level": "balanced",
+            "target_poly_count": 300,
+            "paper_size": "a4",
+            "texture_mode": "print_friendly",
+            "flap_size": 5,
+            "max_pages": 12,
+            "build_difficulty_mode": "standard",
+            "mock_failure_stage": "unfolding",
+        },
+    )
+
+    assert response.status_code == 201
+    assert dispatched_task_ids == [response.json()["task_id"]]
+
+
+def test_create_task_rejects_non_execution_mock_failure_stage(client: TestClient) -> None:
+    project_id = _create_project(client)
+
+    response = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "complexity_level": "balanced",
+            "target_poly_count": 300,
+            "paper_size": "a4",
+            "texture_mode": "print_friendly",
+            "flap_size": 5,
+            "max_pages": 12,
+            "build_difficulty_mode": "standard",
+            "mock_failure_stage": "completed",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "REQUEST_VALIDATION_FAILED"

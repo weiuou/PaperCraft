@@ -17,7 +17,14 @@ from app.worker.orchestrator import run_generation_pipeline
 
 
 @pytest.fixture()
-def api_context() -> Generator[tuple[TestClient, sessionmaker[Session]]]:
+def api_context(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, sessionmaker[Session]]]:
+    stored_artifacts: dict[str, bytes] = {}
+    monkeypatch.setattr(
+        "app.worker.orchestrator.put_artifact_bytes",
+        lambda key, content, _content_type: stored_artifacts.update({key: content}),
+    )
+    monkeypatch.setattr("app.api.routes.artifacts.get_artifact_bytes", lambda key: stored_artifacts[key])
+
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -110,3 +117,45 @@ def test_missing_artifact_returns_stable_error(api_context: tuple[TestClient, se
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "ARTIFACT_NOT_FOUND"
+
+
+def test_cancel_and_retry_task_endpoints(
+    api_context: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_factory = api_context
+    enqueued_task_ids: list[str] = []
+    monkeypatch.setattr("app.api.routes.tasks.enqueue_generation_task", lambda task_id: enqueued_task_ids.append(str(task_id)))
+
+    with session_factory() as db:
+        user = User(email=f"{uuid.uuid4()}@example.com")
+        db.add(user)
+        db.flush()
+        project = Project(
+            user_id=user.id,
+            title="Retry Demo Cat",
+            category=ProjectCategory.PET.value,
+            status=ProjectStatus.ACTIVE.value,
+        )
+        db.add(project)
+        db.flush()
+        task = GenerationTask(
+            project_id=project.id,
+            status=TaskStatus.QUEUED.value,
+            stage=TaskStage.UPLOAD_VALIDATION.value,
+            progress=0,
+        )
+        db.add(task)
+        db.commit()
+        task_id = task.id
+
+    cancel_response = client.post(f"/api/tasks/{task_id}/cancel", json={})
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == TaskStatus.CANCELED.value
+
+    retry_response = client.post(f"/api/tasks/{task_id}/retry", json={"stage": TaskStage.PREPROCESSING.value})
+
+    assert retry_response.status_code == 200
+    assert retry_response.json()["status"] == TaskStatus.QUEUED.value
+    assert enqueued_task_ids == [str(task_id)]

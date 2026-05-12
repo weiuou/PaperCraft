@@ -82,7 +82,7 @@ Exit criteria:
 
 Owner focus: frontend, backend, worker
 
-Status: in progress.
+Status: completed for the mock demo loop.
 
 Completed:
 
@@ -90,13 +90,15 @@ Completed:
 - Connect frontend task polling to backend status, artifacts, and assembly
   metadata.
 - Run the full stack through Docker Compose for local internal demos.
+- Write source uploads and mock preview/net/PDF artifacts through the local
+  S3-compatible object storage path.
 
 Remaining:
 
-- Add paper-net page switching and richer workbench artifact interactions.
-- Add regenerate/export actions around the project detail flow.
-- Demonstrate failure and cancellation flows with mock pipeline controls.
-- Add project artifact history once multiple task runs are visible.
+- Move from the single-screen demo workbench toward durable project detail
+  routes once auth and project navigation are introduced.
+- Replace mock stage execution with real preprocessing, mesh, unfolding, and
+  export modules.
 
 Current backend support:
 
@@ -104,20 +106,22 @@ Current backend support:
   placeholder, PDF export placeholder, and assembly metadata.
 - task status responses include available artifacts and assembly metadata for
   frontend polling and workbench rendering.
-- local mock artifact downloads are exposed through the API so the frontend can
-  exercise preview/export actions before object storage integration.
+- artifact downloads are exposed through the API and read from MinIO in the
+  Docker demo stack, while tests use in-memory storage substitutes.
 - Docker Compose can run the web, API, worker, database, Redis, and MinIO stack.
-- the workbench renders mock net JSON as a paper page and part list for the
+- the workbench renders mock net JSON with page switching and part lists for the
   internal demo flow.
+- the demo flow supports task history, regeneration, cancellation, retry, and
+  controlled mock failures.
 
 Exit criteria:
 
-- Issue `#6` can be closed.
-- Issues `#7` and `#8` remain open until page switching, regenerate/history,
-  and failure/cancellation demo paths are complete.
-- The product can be demonstrated from upload through fake export.
+- Issues `#6`, `#7`, and `#8` can be closed once the implementation is merged.
+- The product can be demonstrated from upload through fake export, including
+  failure, cancellation, retry, and repeat generation paths.
 
-## Implementation Started
+## Next Implementation Focus
 
-M2 should start with the frontend create-project, upload, parameter, and
-progress flow, then connect the workbench to the mock task artifacts.
+M3 should introduce image preprocessing as the first real pipeline stage, using
+the object storage-backed source and artifact IO path now available in the
+local stack.
