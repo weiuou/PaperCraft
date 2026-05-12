@@ -7,10 +7,15 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Artifact, AssemblyMetadata, GenerationTask, TaskEvent
+from app.db.models import Artifact, AssemblyMetadata, GenerationTask, SourceImage, TaskEvent
 from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
 from app.services.mock_artifacts import mock_artifact_content
-from app.services.object_storage import ObjectStorageError, put_artifact_bytes
+from app.services.object_storage import ObjectStorageError, get_upload_bytes, put_artifact_bytes
+from app.services.preprocessing import (
+    PreprocessingFailed,
+    PreprocessingSubjectNotFound,
+    preprocess_source_image,
+)
 from app.services.storage_paths import ArtifactPathGroup, task_artifact_key
 
 logger = logging.getLogger("papercraft.worker")
@@ -153,7 +158,7 @@ def run_generation_pipeline(
             if mock_failure is not None:
                 raise TaskExecutionError(mock_failure, f"Mock failure at {stage.value}.")
 
-            result = executor.execute(task, stage)
+            result = _run_preprocessing_stage(db, task) if stage == TaskStage.PREPROCESSING else executor.execute(task, stage)
             task.progress = result.progress
             _add_event(
                 db,
@@ -267,6 +272,57 @@ def _mock_failure_for_stage(db: Session, task: GenerationTask, stage: TaskStage)
         TaskStage.UNFOLDING: ErrorCode.UNFOLD_FAILED,
         TaskStage.EXPORTING: ErrorCode.EXPORT_FAILED,
     }[stage]
+
+
+def _run_preprocessing_stage(db: Session, task: GenerationTask) -> StageResult:
+    source_image = db.scalar(
+        select(SourceImage).where(SourceImage.project_id == task.project_id).order_by(SourceImage.sort_order)
+    )
+    if source_image is None:
+        raise TaskExecutionError(
+            ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND,
+            "Project has no source image available for preprocessing.",
+        )
+
+    try:
+        content = get_upload_bytes(source_image.storage_key)
+        result = preprocess_source_image(
+            source_image_id=source_image.id,
+            source_storage_key=source_image.storage_key,
+            content=content,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except PreprocessingSubjectNotFound as exc:
+        raise TaskExecutionError(ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND, str(exc)) from exc
+    except PreprocessingFailed as exc:
+        raise TaskExecutionError(ErrorCode.PREPROCESS_FAILED, str(exc)) from exc
+
+    for payload in result.artifacts:
+        artifact_id = uuid.uuid4()
+        storage_key = task_artifact_key(task.project_id, task.id, ArtifactPathGroup.PREPROCESS, artifact_id, payload.filename)
+        try:
+            put_artifact_bytes(storage_key, payload.content, payload.mime_type)
+        except ObjectStorageError as exc:
+            raise TaskExecutionError(exc.code, exc.message) from exc
+
+        db.add(
+            Artifact(
+                id=artifact_id,
+                task_id=task.id,
+                kind=payload.kind.value,
+                storage_key=storage_key,
+                mime_type=payload.mime_type,
+                file_size=len(payload.content),
+                artifact_metadata=payload.metadata,
+            )
+        )
+
+    return StageResult(
+        progress=15,
+        message="Image preprocessing completed.",
+        metadata=result.metadata,
+    )
 
 
 def _add_event(

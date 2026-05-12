@@ -1,15 +1,17 @@
 import uuid
 import logging
 from collections.abc import Generator
+from io import BytesIO
 
 import pytest
+from PIL import Image, ImageDraw
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db import models  # noqa: F401
-from app.db.models import Artifact, AssemblyMetadata, GenerationTask, Project, TaskEvent, User
+from app.db.models import Artifact, AssemblyMetadata, GenerationTask, Project, SourceImage, TaskEvent, User
 from app.domain.enums import ArtifactKind, ErrorCode, ProjectCategory, ProjectStatus, TaskEventType, TaskStage, TaskStatus
 from app.worker.orchestrator import (
     MockStageExecutor,
@@ -24,6 +26,7 @@ from app.worker.orchestrator import (
 @pytest.fixture(autouse=True)
 def mock_object_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.worker.orchestrator.put_artifact_bytes", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.worker.orchestrator.get_upload_bytes", lambda _key: _source_png_bytes())
 
 
 @pytest.fixture()
@@ -54,6 +57,19 @@ def _create_task(db: Session, status: TaskStatus = TaskStatus.QUEUED) -> uuid.UU
     )
     db.add(project)
     db.flush()
+    source_bytes = _source_png_bytes()
+    db.add(
+        SourceImage(
+            project_id=project.id,
+            storage_key=f"projects/{project.id}/source-images/{uuid.uuid4()}/cat.png",
+            mime_type="image/png",
+            width=80,
+            height=60,
+            file_size=len(source_bytes),
+            sort_order=0,
+        )
+    )
+    db.flush()
     task = GenerationTask(
         project_id=project.id,
         status=status.value,
@@ -63,6 +79,22 @@ def _create_task(db: Session, status: TaskStatus = TaskStatus.QUEUED) -> uuid.UU
     db.add(task)
     db.commit()
     return task.id
+
+
+def _source_png_bytes() -> bytes:
+    image = Image.new("RGB", (80, 60), color=(245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((22, 12, 56, 48), fill=(190, 72, 52))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _blank_png_bytes() -> bytes:
+    image = Image.new("RGB", (80, 60), color=(245, 245, 245))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.LogCaptureFixture) -> None:
@@ -85,11 +117,21 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
 
     artifacts = db.scalars(select(Artifact).where(Artifact.task_id == task_id)).all()
     assert {artifact.kind for artifact in artifacts} == {
+        ArtifactKind.PREPROCESS_MASK.value,
+        ArtifactKind.PREPROCESS_CROP.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
     }
-    assert all(artifact.artifact_metadata["mock"] for artifact in artifacts)
+    preprocessing_artifacts = [
+        artifact for artifact in artifacts if artifact.kind in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
+    ]
+    assert all(artifact.artifact_metadata["real_stage"] == "preprocessing" for artifact in preprocessing_artifacts)
+    assert all(
+        artifact.artifact_metadata["mock"]
+        for artifact in artifacts
+        if artifact.kind not in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
+    )
     assert all(str(task_id) in artifact.storage_key for artifact in artifacts)
 
     assembly = db.scalar(select(AssemblyMetadata).where(AssemblyMetadata.task_id == task_id))
@@ -98,6 +140,22 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     assert assembly.part_count == 12
     assert assembly.difficulty_score == 3
     assert assembly.assembly_metadata["pair_numbering"]
+
+
+def test_preprocessing_subject_not_found_fails_task(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.worker.orchestrator.get_upload_bytes", lambda _key: _blank_png_bytes())
+    task_id = _create_task(db)
+
+    task = run_generation_pipeline(db, task_id)
+
+    assert task.status == TaskStatus.FAILED.value
+    assert task.stage == TaskStage.PREPROCESSING.value
+    assert task.error_code == ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND.value
+    failed_event = db.scalar(
+        select(TaskEvent).where(TaskEvent.task_id == task_id, TaskEvent.event_type == TaskEventType.FAILED.value)
+    )
+    assert failed_event is not None
+    assert failed_event.event_metadata["error_code"] == ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND.value
 
 
 def test_pipeline_failure_writes_readable_error(db: Session) -> None:

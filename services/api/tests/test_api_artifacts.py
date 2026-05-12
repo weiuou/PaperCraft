@@ -1,8 +1,10 @@
 import uuid
 from collections.abc import Generator
+from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -10,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Artifact, GenerationTask, Project, User
+from app.db.models import Artifact, GenerationTask, Project, SourceImage, User
 from app.domain.enums import ArtifactKind, ProjectCategory, ProjectStatus, TaskStage, TaskStatus
 from app.main import create_app
 from app.worker.orchestrator import run_generation_pipeline
@@ -23,6 +25,7 @@ def api_context(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, 
         "app.worker.orchestrator.put_artifact_bytes",
         lambda key, content, _content_type: stored_artifacts.update({key: content}),
     )
+    monkeypatch.setattr("app.worker.orchestrator.get_upload_bytes", lambda _key: _source_png_bytes())
     monkeypatch.setattr("app.api.routes.artifacts.get_artifact_bytes", lambda key: stored_artifacts[key])
 
     engine = create_engine(
@@ -59,6 +62,19 @@ def _create_completed_mock_task(session_factory: sessionmaker[Session]) -> uuid.
         )
         db.add(project)
         db.flush()
+        source_bytes = _source_png_bytes()
+        db.add(
+            SourceImage(
+                project_id=project.id,
+                storage_key=f"projects/{project.id}/source-images/{uuid.uuid4()}/cat.png",
+                mime_type="image/png",
+                width=80,
+                height=60,
+                file_size=len(source_bytes),
+                sort_order=0,
+            )
+        )
+        db.flush()
         task = GenerationTask(
             project_id=project.id,
             status=TaskStatus.QUEUED.value,
@@ -70,6 +86,15 @@ def _create_completed_mock_task(session_factory: sessionmaker[Session]) -> uuid.
         task_id = task.id
         run_generation_pipeline(db, task_id)
         return task_id
+
+
+def _source_png_bytes() -> bytes:
+    image = Image.new("RGB", (80, 60), color=(245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((22, 12, 56, 48), fill=(190, 72, 52))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_task_status_returns_mock_artifacts_and_download_urls(
@@ -84,11 +109,19 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
     payload = response.json()
     assert payload["status"] == "completed"
     assert {artifact["kind"] for artifact in payload["artifacts"]} == {
+        ArtifactKind.PREPROCESS_MASK.value,
+        ArtifactKind.PREPROCESS_CROP.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
     }
     assert all(artifact["download_url"].startswith("/api/artifacts/") for artifact in payload["artifacts"])
+    preprocess_artifacts = [
+        artifact
+        for artifact in payload["artifacts"]
+        if artifact["kind"] in {ArtifactKind.PREPROCESS_MASK.value, ArtifactKind.PREPROCESS_CROP.value}
+    ]
+    assert all(artifact["metadata"]["real_stage"] == "preprocessing" for artifact in preprocess_artifacts)
     assert payload["assembly_metadata"]["page_count"] == 3
     assert payload["assembly_metadata"]["metadata"]["pair_numbering"]
 
