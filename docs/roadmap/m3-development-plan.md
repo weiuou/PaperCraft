@@ -5,12 +5,13 @@ Last updated: 2026-05-12
 ## Summary
 
 M3 replaces the M2 mock pipeline one stage at a time while keeping the demo loop
-usable after each merge. The first completed slice is GitHub issue `#9`: real
-image preprocessing. The current active slice is issue `#10`: deterministic,
-category-constrained base mesh generation.
+usable after each merge. Completed slices include issue `#9`: real image
+preprocessing, and issue `#10`: deterministic, category-constrained base mesh
+generation. The current active slice is issue `#11`: paperability optimization
+and constrained decimation.
 
-Paperability optimization, unfolding/layout, and final PDF export remain later
-M3 work under issues `#11` through `#13`.
+Unfolding/layout and final PDF export remain later M3 work under issues `#12`
+and `#13`.
 
 ## GitHub Alignment
 
@@ -18,8 +19,9 @@ M3 work under issues `#11` through `#13`.
   merge.
 - Tracking issue `#16` should mark `#7` and `#8` complete.
 - Issue `#9` is complete after PR `#24`.
-- Issue `#10` is the active M3 entry point after preprocessing.
-- Issues `#11`, `#12`, and `#13` remain open for later M3 sequencing.
+- Issue `#10` is complete after PR `#25`.
+- Issue `#11` is the active M3 entry point after base mesh generation.
+- Issues `#12` and `#13` remain open for later M3 sequencing.
 
 ## Completed Slice: `#9` Image Preprocessing
 
@@ -41,7 +43,7 @@ M3 work under issues `#11` through `#13`.
 - Continue to run M2 mock stages after preprocessing succeeds so the full demo
   loop still reaches mock preview, net, PDF, and assembly metadata.
 
-## Active Slice: `#10` Base Mesh Generation
+## Completed Slice: `#10` Base Mesh Generation
 
 - Use deterministic Python mesh generation; do not add external 3D or ML
   dependencies for this first pass.
@@ -57,6 +59,20 @@ M3 work under issues `#11` through `#13`.
 - Continue to run M2 mock paperability, unfolding, and export stages after base
   mesh generation succeeds.
 
+## Active Slice: `#11` Paperability And Decimation
+
+- Use deterministic Python OBJ processing; do not add external mesh libraries
+  for this first pass.
+- Read the `base_mesh` OBJ artifact and metadata from the current task.
+- Repair the base mesh into a `repaired_mesh` OBJ artifact by validating
+  faces, deduplicating vertices, removing degenerate or duplicate faces, and
+  recording fragile-structure diagnostics.
+- Read the `repaired_mesh` artifact and task parameter snapshot.
+- Produce a `low_poly_mesh` OBJ artifact through constrained decimation using
+  `target_poly_count` and `max_pages` as the first budget controls.
+- Continue to run M2 mock unfolding and export stages after low-poly mesh
+  generation succeeds.
+
 ## Failure Contract
 
 - If no usable subject can be detected, fail the task with
@@ -65,6 +81,10 @@ M3 work under issues `#11` through `#13`.
   `PREPROCESS_FAILED`.
 - If model generation lacks preprocessing metadata or cannot produce a
   category-constrained mesh, fail with `MODEL_GEN_FAILED`.
+- If paperability repair cannot produce a usable mesh, fail with
+  `PAPERABILITY_OPT_FAILED`.
+- If constrained decimation cannot produce a low-poly mesh, fail with
+  `DECIMATE_FAILED`.
 - Storage read/write errors continue to use the existing storage error codes so
   infrastructure failures stay distinguishable from algorithm failures.
 
@@ -91,6 +111,16 @@ For `#10`:
 - The task continues into later paperability/unfold/export stages after base
   mesh generation succeeds.
 
+For `#11`:
+
+- Positive samples produce `repaired_mesh` and `low_poly_mesh` OBJ artifacts.
+- Task status returns paperability and decimation artifacts with download URLs
+  and metadata.
+- Paperability failures return `PAPERABILITY_OPT_FAILED`.
+- Decimation failures return `DECIMATE_FAILED`.
+- The task continues into later unfolding/export stages after constrained
+  decimation succeeds.
+
 ## Test Plan
 
 - Unit-test Pillow preprocessing for successful mask/crop generation and
@@ -102,6 +132,9 @@ For `#10`:
 - Unit-test deterministic base mesh generation for all category strategies.
 - Worker-test that `model_generating` writes `base_mesh` and continues into the
   later mock stages.
+- Unit-test paperability repair metadata and constrained decimation budgets.
+- Worker-test that `paperability_optimizing` writes `repaired_mesh` and
+  `decimating` writes `low_poly_mesh`.
 - Run:
   - `uv run --extra dev pytest`
   - `pnpm --filter @papercraft/web typecheck`

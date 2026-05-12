@@ -25,6 +25,7 @@ def api_context(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, 
         "app.worker.orchestrator.put_artifact_bytes",
         lambda key, content, _content_type: stored_artifacts.update({key: content}),
     )
+    monkeypatch.setattr("app.worker.orchestrator.get_artifact_bytes", lambda key: stored_artifacts[key])
     monkeypatch.setattr("app.worker.orchestrator.get_upload_bytes", lambda _key: _source_png_bytes())
     monkeypatch.setattr("app.api.routes.artifacts.get_artifact_bytes", lambda key: stored_artifacts[key])
 
@@ -126,6 +127,8 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
         ArtifactKind.PREPROCESS_MASK.value,
         ArtifactKind.PREPROCESS_CROP.value,
         ArtifactKind.BASE_MESH.value,
+        ArtifactKind.REPAIRED_MESH.value,
+        ArtifactKind.LOW_POLY_MESH.value,
         ArtifactKind.PREVIEW_MODEL.value,
         ArtifactKind.NET_JSON.value,
         ArtifactKind.EXPORT_PDF.value,
@@ -140,6 +143,10 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
     base_mesh = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.BASE_MESH.value)
     assert base_mesh["metadata"]["real_stage"] == "model_generating"
     assert base_mesh["download_url"].startswith("/api/artifacts/")
+    repaired_mesh = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.REPAIRED_MESH.value)
+    assert repaired_mesh["metadata"]["real_stage"] == "paperability_optimizing"
+    low_poly_mesh = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.LOW_POLY_MESH.value)
+    assert low_poly_mesh["metadata"]["real_stage"] == "decimating"
     assert payload["assembly_metadata"]["page_count"] == 3
     assert payload["assembly_metadata"]["metadata"]["pair_numbering"]
 

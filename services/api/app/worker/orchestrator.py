@@ -11,7 +11,13 @@ from app.db.models import Artifact, AssemblyMetadata, GenerationTask, SourceImag
 from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
 from app.services.mesh_generation import MeshGenerationFailed, generate_base_mesh
 from app.services.mock_artifacts import mock_artifact_content
-from app.services.object_storage import ObjectStorageError, get_upload_bytes, put_artifact_bytes
+from app.services.object_storage import ObjectStorageError, get_artifact_bytes, get_upload_bytes, put_artifact_bytes
+from app.services.paperability import (
+    MeshDecimationFailed,
+    PaperabilityOptimizationFailed,
+    decimate_mesh,
+    optimize_paperability,
+)
 from app.services.preprocessing import (
     PreprocessingFailed,
     PreprocessingSubjectNotFound,
@@ -331,6 +337,10 @@ def _execute_stage(db: Session, task: GenerationTask, stage: TaskStage, executor
         return _run_preprocessing_stage(db, task)
     if stage == TaskStage.MODEL_GENERATING:
         return _run_model_generation_stage(db, task)
+    if stage == TaskStage.PAPERABILITY_OPTIMIZING:
+        return _run_paperability_stage(db, task)
+    if stage == TaskStage.DECIMATING:
+        return _run_decimation_stage(db, task)
     return executor.execute(task, stage)
 
 
@@ -385,6 +395,87 @@ def _run_model_generation_stage(db: Session, task: GenerationTask) -> StageResul
         progress=35,
         message="Base mesh generation completed.",
         metadata=result.metadata,
+    )
+
+
+def _run_paperability_stage(db: Session, task: GenerationTask) -> StageResult:
+    base_mesh = _latest_artifact(db, task, ArtifactKind.BASE_MESH)
+    try:
+        content = get_artifact_bytes(base_mesh.storage_key)
+        result = optimize_paperability(
+            base_mesh_content=content,
+            base_mesh_metadata=base_mesh.artifact_metadata,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except PaperabilityOptimizationFailed as exc:
+        raise TaskExecutionError(ErrorCode.PAPERABILITY_OPT_FAILED, str(exc)) from exc
+
+    _persist_mesh_artifact(db, task, result.artifact, ArtifactPathGroup.MESHES)
+    return StageResult(
+        progress=50,
+        message="Paperability optimization completed.",
+        metadata=result.metadata,
+    )
+
+
+def _run_decimation_stage(db: Session, task: GenerationTask) -> StageResult:
+    repaired_mesh = _latest_artifact(db, task, ArtifactKind.REPAIRED_MESH)
+    if task.param_config is None:
+        raise TaskExecutionError(
+            ErrorCode.DECIMATE_FAILED,
+            "Task parameter snapshot is required before decimation.",
+        )
+    try:
+        content = get_artifact_bytes(repaired_mesh.storage_key)
+        result = decimate_mesh(
+            repaired_mesh_content=content,
+            repaired_mesh_metadata=repaired_mesh.artifact_metadata,
+            target_poly_count=task.param_config.target_poly_count,
+            max_pages=task.param_config.max_pages,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except MeshDecimationFailed as exc:
+        raise TaskExecutionError(ErrorCode.DECIMATE_FAILED, str(exc)) from exc
+
+    _persist_mesh_artifact(db, task, result.artifact, ArtifactPathGroup.MESHES)
+    return StageResult(
+        progress=65,
+        message="Constrained decimation completed.",
+        metadata=result.metadata,
+    )
+
+
+def _latest_artifact(db: Session, task: GenerationTask, kind: ArtifactKind) -> Artifact:
+    artifact = db.scalar(
+        select(Artifact)
+        .where(Artifact.task_id == task.id, Artifact.kind == kind.value)
+        .order_by(Artifact.created_at.desc())
+    )
+    if artifact is None:
+        error_code = ErrorCode.PAPERABILITY_OPT_FAILED if kind == ArtifactKind.BASE_MESH else ErrorCode.DECIMATE_FAILED
+        raise TaskExecutionError(error_code, f"{kind.value} artifact is required before this stage.")
+    return artifact
+
+
+def _persist_mesh_artifact(db: Session, task: GenerationTask, payload, group: ArtifactPathGroup) -> None:
+    artifact_id = uuid.uuid4()
+    storage_key = task_artifact_key(task.project_id, task.id, group, artifact_id, payload.filename)
+    try:
+        put_artifact_bytes(storage_key, payload.content, payload.mime_type)
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    db.add(
+        Artifact(
+            id=artifact_id,
+            task_id=task.id,
+            kind=payload.kind.value,
+            storage_key=storage_key,
+            mime_type=payload.mime_type,
+            file_size=len(payload.content),
+            artifact_metadata=payload.metadata,
+        )
     )
 
 
