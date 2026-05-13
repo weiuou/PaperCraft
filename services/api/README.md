@@ -32,6 +32,10 @@ the first M4 stabilization slice:
 - task events, progress updates, completion, failure write-back, and retry or
   cancellation hooks
 - task status next-action suggestions for fallback and recovery guidance
+- correlated task event metadata and worker logs for task, project, user, and
+  stage debugging
+- task metrics report for completion rate, failure rate, stage durations,
+  export rate, average page count, average part count, and basic alerts
 - artifact records for preprocessing, mesh, paperability, decimation, net JSON,
   net SVG, preview, PDF export, and assembly metadata
 - real PDF export and assembly metadata generation from net artifacts
@@ -50,6 +54,8 @@ Implemented endpoints:
   available
 - `GET /api/artifacts/{artifact_id}/download` for stored artifacts, with a mock
   fallback only for legacy/mock artifacts
+- `GET /api/metrics/tasks` for task completion, failure, duration, export, and
+  basic alert metrics
 
 ## Local commands
 

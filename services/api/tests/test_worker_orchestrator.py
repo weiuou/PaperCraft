@@ -131,6 +131,11 @@ def test_pipeline_advances_task_to_completed_with_real_export(db: Session, caplo
     assert any(event.event_type == TaskEventType.PROGRESS_UPDATED.value for event in events)
     assert events[-1].event_type == TaskEventType.COMPLETED.value
     assert f"task_id={task_id}" in caplog.text
+    completed_stage_events = [event for event in events if event.event_type == TaskEventType.STAGE_COMPLETED.value]
+    assert all(isinstance(event.event_metadata["duration_ms"], int | float) for event in completed_stage_events)
+    assert all(event.event_metadata["task_id"] == str(task_id) for event in events)
+    assert all(event.event_metadata["project_id"] for event in events)
+    assert all(event.event_metadata["user_id"] for event in events)
 
     artifacts = db.scalars(select(Artifact).where(Artifact.task_id == task_id)).all()
     assert {artifact.kind for artifact in artifacts} == {
