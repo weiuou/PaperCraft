@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Artifact, AssemblyMetadata, GenerationTask, SourceImage, TaskEvent
 from app.domain.enums import ArtifactKind, ErrorCode, TaskEventType, TaskStage, TaskStatus
+from app.services.exporting import ExportFailed, export_papercraft_pdf
 from app.services.mesh_generation import MeshGenerationFailed, generate_base_mesh
 from app.services.mock_artifacts import mock_artifact_content
 from app.services.object_storage import ObjectStorageError, get_artifact_bytes, get_upload_bytes, put_artifact_bytes
@@ -344,6 +345,8 @@ def _execute_stage(db: Session, task: GenerationTask, stage: TaskStage, executor
         return _run_decimation_stage(db, task)
     if stage == TaskStage.UNFOLDING:
         return _run_unfolding_stage(db, task)
+    if stage == TaskStage.EXPORTING:
+        return _run_export_stage(db, task)
     return executor.execute(task, stage)
 
 
@@ -480,6 +483,54 @@ def _run_unfolding_stage(db: Session, task: GenerationTask) -> StageResult:
     )
 
 
+def _run_export_stage(db: Session, task: GenerationTask) -> StageResult:
+    net_json = _latest_artifact(db, task, ArtifactKind.NET_JSON)
+    net_svg = _latest_artifact(db, task, ArtifactKind.NET_SVG)
+    if task.param_config is None:
+        raise TaskExecutionError(
+            ErrorCode.EXPORT_FAILED,
+            "Task parameter snapshot is required before export.",
+        )
+    try:
+        result = export_papercraft_pdf(
+            net_json_content=get_artifact_bytes(net_json.storage_key),
+            net_json_metadata=net_json.artifact_metadata,
+            net_svg_content=get_artifact_bytes(net_svg.storage_key),
+            net_svg_metadata=net_svg.artifact_metadata,
+            paper_size=task.param_config.paper_size,
+            build_difficulty_mode=task.param_config.build_difficulty_mode,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except ExportFailed as exc:
+        raise TaskExecutionError(ErrorCode.EXPORT_FAILED, str(exc)) from exc
+
+    _persist_mesh_artifact(db, task, result.artifact, ArtifactPathGroup.EXPORTS)
+    existing_assembly = db.scalar(select(AssemblyMetadata).where(AssemblyMetadata.task_id == task.id))
+    if existing_assembly is None:
+        db.add(
+            AssemblyMetadata(
+                task_id=task.id,
+                page_count=result.assembly.page_count,
+                part_count=result.assembly.part_count,
+                difficulty_score=result.assembly.difficulty_score,
+                estimated_build_minutes=result.assembly.estimated_build_minutes,
+                assembly_metadata=result.assembly.metadata,
+            )
+        )
+    else:
+        existing_assembly.page_count = result.assembly.page_count
+        existing_assembly.part_count = result.assembly.part_count
+        existing_assembly.difficulty_score = result.assembly.difficulty_score
+        existing_assembly.estimated_build_minutes = result.assembly.estimated_build_minutes
+        existing_assembly.assembly_metadata = result.assembly.metadata
+    return StageResult(
+        progress=95,
+        message="PDF export and assembly metadata completed.",
+        metadata=result.metadata,
+    )
+
+
 def _latest_artifact(db: Session, task: GenerationTask, kind: ArtifactKind) -> Artifact:
     artifact = db.scalar(
         select(Artifact)
@@ -491,6 +542,8 @@ def _latest_artifact(db: Session, task: GenerationTask, kind: ArtifactKind) -> A
             ArtifactKind.BASE_MESH: ErrorCode.PAPERABILITY_OPT_FAILED,
             ArtifactKind.REPAIRED_MESH: ErrorCode.DECIMATE_FAILED,
             ArtifactKind.LOW_POLY_MESH: ErrorCode.UNFOLD_FAILED,
+            ArtifactKind.NET_JSON: ErrorCode.EXPORT_FAILED,
+            ArtifactKind.NET_SVG: ErrorCode.EXPORT_FAILED,
         }.get(kind, ErrorCode.INTERNAL_ERROR)
         raise TaskExecutionError(error_code, f"{kind.value} artifact is required before this stage.")
     return artifact
@@ -537,7 +590,7 @@ def _add_event(
 
 
 def _create_mock_outputs(db: Session, task: GenerationTask) -> None:
-    if task.assembly_metadata is not None:
+    if db.scalar(select(AssemblyMetadata.id).where(AssemblyMetadata.task_id == task.id)) is not None:
         return
     existing_kinds = set(db.scalars(select(Artifact.kind).where(Artifact.task_id == task.id)).all())
 

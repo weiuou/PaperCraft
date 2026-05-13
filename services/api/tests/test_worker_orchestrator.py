@@ -13,10 +13,8 @@ from app.db.base import Base
 from app.db import models  # noqa: F401
 from app.db.models import Artifact, AssemblyMetadata, GenerationTask, ParamConfig, Project, SourceImage, TaskEvent, User
 from app.domain.enums import ArtifactKind, ErrorCode, ProjectCategory, ProjectStatus, TaskEventType, TaskStage, TaskStatus
+from app.services.exporting import ExportFailed
 from app.worker.orchestrator import (
-    MockStageExecutor,
-    StageResult,
-    TaskExecutionError,
     cancel_generation_task,
     request_retry_from_stage,
     run_generation_pipeline,
@@ -116,7 +114,7 @@ def _blank_png_bytes() -> bytes:
     return output.getvalue()
 
 
-def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.LogCaptureFixture) -> None:
+def test_pipeline_advances_task_to_completed_with_real_export(db: Session, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO, logger="papercraft.worker")
     task_id = _create_task(db)
 
@@ -161,18 +159,19 @@ def test_mock_pipeline_advances_task_to_completed(db: Session, caplog: pytest.Lo
     assert net_json.artifact_metadata["real_stage"] == "unfolding"
     net_svg = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.NET_SVG.value)
     assert net_svg.artifact_metadata["real_stage"] == "unfolding"
-    assert all(
-        artifact.artifact_metadata["mock"]
-        for artifact in artifacts
-        if artifact.kind == ArtifactKind.EXPORT_PDF.value
-    )
+    export_pdf = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.EXPORT_PDF.value)
+    assert export_pdf.artifact_metadata["mock"] is False
+    assert export_pdf.artifact_metadata["real_stage"] == "exporting"
+    assert export_pdf.artifact_metadata["instruction_sheet"]
     assert all(str(task_id) in artifact.storage_key for artifact in artifacts)
 
     assembly = db.scalar(select(AssemblyMetadata).where(AssemblyMetadata.task_id == task_id))
     assert assembly is not None
-    assert assembly.page_count == 3
-    assert assembly.part_count == 12
-    assert assembly.difficulty_score == 3
+    assert assembly.page_count == export_pdf.artifact_metadata["page_count"]
+    assert assembly.part_count == export_pdf.artifact_metadata["part_count"]
+    assert 1 <= assembly.difficulty_score <= 10
+    assert assembly.assembly_metadata["mock"] is False
+    assert assembly.assembly_metadata["instruction_sheet"]
     assert assembly.assembly_metadata["pair_numbering"]
 
 
@@ -192,23 +191,24 @@ def test_preprocessing_subject_not_found_fails_task(db: Session, monkeypatch: py
     assert failed_event.event_metadata["error_code"] == ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND.value
 
 
-def test_pipeline_failure_writes_readable_error(db: Session) -> None:
-    class FailingExecutor(MockStageExecutor):
-        def execute(self, task: GenerationTask, stage: TaskStage) -> StageResult:
-            raise TaskExecutionError(ErrorCode.UNFOLD_FAILED, "mock unfold failed")
+def test_pipeline_failure_writes_readable_error(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_export(**_kwargs) -> None:
+        raise ExportFailed("pdf export failed")
 
+    monkeypatch.setattr("app.worker.orchestrator.export_papercraft_pdf", fail_export)
     task_id = _create_task(db)
 
-    task = run_generation_pipeline(db, task_id, executor=FailingExecutor())
+    task = run_generation_pipeline(db, task_id)
 
     assert task.status == TaskStatus.FAILED.value
-    assert task.error_code == ErrorCode.UNFOLD_FAILED.value
-    assert task.error_message == "mock unfold failed"
+    assert task.stage == TaskStage.EXPORTING.value
+    assert task.error_code == ErrorCode.EXPORT_FAILED.value
+    assert task.error_message == "pdf export failed"
     failed_event = db.scalar(
         select(TaskEvent).where(TaskEvent.task_id == task_id, TaskEvent.event_type == TaskEventType.FAILED.value)
     )
     assert failed_event is not None
-    assert failed_event.event_metadata["error_code"] == ErrorCode.UNFOLD_FAILED.value
+    assert failed_event.event_metadata["error_code"] == ErrorCode.EXPORT_FAILED.value
 
 
 def test_mock_failure_stage_from_task_event_fails_once_then_retry_succeeds(db: Session) -> None:

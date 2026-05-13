@@ -1,13 +1,18 @@
 # AI PaperCraft Studio Current Development Plan
 
-Last updated: 2026-05-08
+Last updated: 2026-05-13
 
 ## Current Position
 
-The repository has completed the M1 backend foundation through the worker
-backbone and the first M2 frontend flow. The next priority is to finish the
-remaining workbench behaviors and broaden the mock demo coverage before
-replacing the mock stages with real algorithms.
+The repository has completed the M1 foundation and the M2 mock closed loop.
+M3 is implemented in code through real preprocessing, base mesh generation,
+paperability repair, constrained decimation, unfolding/layout, PDF export, and
+assembly metadata generation.
+
+GitHub bookkeeping is slightly behind the code state. PR `#27` merged the
+unfolding and layout implementation for issue `#12`, but issue `#12` and the
+tracking checkbox in issue `#16` are still open. Issue `#13` should be closed
+after this export implementation is merged.
 
 ## Near-Term Execution Plan
 
@@ -82,7 +87,7 @@ Exit criteria:
 
 Owner focus: frontend, backend, worker
 
-Status: completed for the mock demo loop.
+Status: completed.
 
 Completed:
 
@@ -93,17 +98,10 @@ Completed:
 - Write source uploads and mock preview/net/PDF artifacts through the local
   S3-compatible object storage path.
 
-Remaining:
-
-- Move from the single-screen demo workbench toward durable project detail
-  routes once auth and project navigation are introduced.
-- Replace mock stage execution with real preprocessing, mesh, unfolding, and
-  export modules.
-
 Current backend support:
 
-- completed mock tasks now record a 3D preview placeholder, net JSON
-  placeholder, PDF export placeholder, and assembly metadata.
+- completed tasks record a 3D preview placeholder, real or mock net artifacts,
+  PDF export placeholder, and assembly metadata.
 - task status responses include available artifacts and assembly metadata for
   frontend polling and workbench rendering.
 - artifact downloads are exposed through the API and read from MinIO in the
@@ -116,12 +114,35 @@ Current backend support:
 
 Exit criteria:
 
-- Issues `#6`, `#7`, and `#8` can be closed once the implementation is merged.
+- Issues `#6`, `#7`, and `#8` are closed.
 - The product can be demonstrated from upload through fake export, including
   failure, cancellation, retry, and repeat generation paths.
 
+### M3 Real Pipeline
+
+Owner focus: worker, backend, algorithm
+
+Status: code-complete pending issue/PR bookkeeping.
+
+Completed in code:
+
+- Issue `#9`: real image preprocessing writes `preprocess_mask` and
+  `preprocess_crop` artifacts.
+- Issue `#10`: deterministic category-constrained base mesh generation writes
+  `base_mesh` and `preview_model` artifacts.
+- Issue `#11`: paperability repair and constrained decimation write
+  `repaired_mesh` and `low_poly_mesh` artifacts.
+- Issue `#12`: unfolding/layout writes structured `net_json` and `net_svg`
+  artifacts. GitHub issue closure is still pending.
+- Issue `#13`: PDF export writes `export_pdf` artifacts and real assembly
+  metadata.
+
+Remaining:
+
+- Run a full Docker Compose demo from upload through real PDF download.
+- Close/update issues `#12`, `#13`, and tracking issue `#16`.
+
 ## Next Implementation Focus
 
-M3 should introduce image preprocessing as the first real pipeline stage, using
-the object storage-backed source and artifact IO path now available in the
-local stack.
+The next implementation slice should start M4 with paperability scoring and
+automatic fallback because those directly affect real-pipeline completion rate.
