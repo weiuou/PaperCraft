@@ -52,6 +52,18 @@ def optimize_paperability(
     thin_edges = sum(1 for length in edge_lengths if length < min_edge_length)
     tiny_faces = sum(1 for area in face_areas if area < min_face_area)
     fragile = thin_edges > max(2, len(edge_lengths) * 0.08) or tiny_faces > max(1, len(face_areas) * 0.08)
+    paperability_score = _paperability_score(
+        face_count=len(repaired_faces),
+        thin_edge_count=thin_edges,
+        tiny_face_count=tiny_faces,
+        fragile_structure=fragile,
+    )
+    warnings = _paperability_warnings(
+        paperability_score=paperability_score,
+        thin_edge_count=thin_edges,
+        tiny_face_count=tiny_faces,
+        fragile_structure=fragile,
+    )
 
     if fragile:
         repaired_vertices, repaired_faces = _scale_mesh(repaired_vertices, repaired_faces, 1.08)
@@ -67,6 +79,8 @@ def optimize_paperability(
         "thin_edge_count": thin_edges,
         "tiny_face_count": tiny_faces,
         "fragile_structure": fragile,
+        "paperability_score": paperability_score,
+        "buildability_warnings": warnings,
         "repair_actions": repair_actions,
         "processing_duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
     }
@@ -98,6 +112,7 @@ def decimate_mesh(
 
     page_budget_faces = max_pages * 24
     target_faces = max(12, min(len(faces), target_poly_count, page_budget_faces))
+    auto_reduced_complexity = target_poly_count > page_budget_faces
     selected_faces = _select_evenly_spaced_faces(faces, target_faces)
     compact_vertices, compact_faces = _compact_vertices(vertices, selected_faces)
     if not compact_faces:
@@ -107,12 +122,21 @@ def decimate_mesh(
         "real_stage": "decimating",
         "source_stage": repaired_mesh_metadata.get("real_stage"),
         "target_poly_count": target_poly_count,
+        "effective_target_poly_count": target_faces,
         "max_pages": max_pages,
         "source_face_count": len(faces),
         "face_count": len(compact_faces),
         "vertex_count": len(compact_vertices),
         "reduction_ratio": round(1 - (len(compact_faces) / len(faces)), 4),
         "page_budget_faces": page_budget_faces,
+        "paperability_score": repaired_mesh_metadata.get("paperability_score"),
+        "auto_fallback": auto_reduced_complexity,
+        "fallback_reason": "target_poly_count_exceeded_page_budget" if auto_reduced_complexity else None,
+        "next_actions": (
+            ["Complexity was automatically reduced to stay within the configured page budget."]
+            if auto_reduced_complexity
+            else []
+        ),
         "processing_duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
     }
     return DecimationResult(
@@ -220,6 +244,38 @@ def _scale_mesh(
     factor: float,
 ) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
     return [(x * factor, y * factor, z * factor) for x, y, z in vertices], faces
+
+
+def _paperability_score(
+    *,
+    face_count: int,
+    thin_edge_count: int,
+    tiny_face_count: int,
+    fragile_structure: bool,
+) -> int:
+    penalty = math.ceil(thin_edge_count / max(1, face_count / 8)) + math.ceil(tiny_face_count / max(1, face_count / 10))
+    if fragile_structure:
+        penalty += 2
+    return max(1, min(10, 10 - penalty))
+
+
+def _paperability_warnings(
+    *,
+    paperability_score: int,
+    thin_edge_count: int,
+    tiny_face_count: int,
+    fragile_structure: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    if fragile_structure:
+        warnings.append("Fragile geometry was reinforced before decimation.")
+    if thin_edge_count:
+        warnings.append("Thin edges may need larger glue flaps or lower complexity.")
+    if tiny_face_count:
+        warnings.append("Tiny faces may be hard to cut cleanly.")
+    if paperability_score <= 5:
+        warnings.append("Try simpler settings if export or assembly quality is poor.")
+    return warnings
 
 
 def _select_evenly_spaced_faces(faces: list[tuple[int, int, int]], target_faces: int) -> list[tuple[int, int, int]]:

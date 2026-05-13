@@ -123,6 +123,7 @@ def test_task_status_returns_real_pipeline_artifacts_and_download_urls(
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "completed"
+    assert isinstance(payload["next_actions"], list)
     assert {artifact["kind"] for artifact in payload["artifacts"]} == {
         ArtifactKind.PREPROCESS_MASK.value,
         ArtifactKind.PREPROCESS_CROP.value,
@@ -223,6 +224,7 @@ def test_cancel_and_retry_task_endpoints(
 
     assert cancel_response.status_code == 200
     assert cancel_response.json()["status"] == TaskStatus.CANCELED.value
+    assert cancel_response.json()["next_actions"] == ["Retry from the selected stage when you are ready to continue."]
 
     retry_response = client.post(f"/api/tasks/{task_id}/retry", json={"stage": TaskStage.PREPROCESSING.value})
 

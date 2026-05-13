@@ -38,6 +38,7 @@ class TaskStatusResponse(BaseModel):
     progress: int = Field(ge=0, le=100)
     error_code: str | None
     error_message: str | None
+    next_actions: list[str]
     artifacts: list[ArtifactResponse]
     assembly_metadata: AssemblyMetadataResponse | None
     started_at: datetime | None

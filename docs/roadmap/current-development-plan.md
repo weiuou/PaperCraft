@@ -9,10 +9,9 @@ M3 is implemented in code through real preprocessing, base mesh generation,
 paperability repair, constrained decimation, unfolding/layout, PDF export, and
 assembly metadata generation.
 
-GitHub bookkeeping is slightly behind the code state. PR `#27` merged the
-unfolding and layout implementation for issue `#12`, but issue `#12` and the
-tracking checkbox in issue `#16` are still open. Issue `#13` should be closed
-after this export implementation is merged.
+M4 has started with issue `#14`: paperability scoring, automatic fallback,
+conservative unfolding retry, stage-level retry selection, and user-facing next
+actions.
 
 ## Near-Term Execution Plan
 
@@ -122,7 +121,7 @@ Exit criteria:
 
 Owner focus: worker, backend, algorithm
 
-Status: code-complete pending issue/PR bookkeeping.
+Status: completed.
 
 Completed in code:
 
@@ -133,16 +132,42 @@ Completed in code:
 - Issue `#11`: paperability repair and constrained decimation write
   `repaired_mesh` and `low_poly_mesh` artifacts.
 - Issue `#12`: unfolding/layout writes structured `net_json` and `net_svg`
-  artifacts. GitHub issue closure is still pending.
+  artifacts.
 - Issue `#13`: PDF export writes `export_pdf` artifacts and real assembly
   metadata.
 
-Remaining:
+Exit criteria:
 
-- Run a full Docker Compose demo from upload through real PDF download.
-- Close/update issues `#12`, `#13`, and tracking issue `#16`.
+- Issues `#9` through `#13` are closed.
+- M3 milestone is closed.
+
+### M4 Stabilization
+
+Owner focus: worker, backend, frontend, QA
+
+Status: in progress.
+
+Current issue:
+
+- Issue `#14`: paperability scoring, automatic fallback, and stage-level retry.
+
+Implemented on the active branch:
+
+- Rule-based `paperability_score` and buildability warnings on repaired meshes.
+- Automatic complexity reduction when requested poly count exceeds page budget.
+- Conservative decimation and unfolding retry when the first unfolding attempt
+  fails.
+- `next_actions` in task status responses for failure recovery and fallback
+  guidance.
+- Frontend retry-stage selection for failed or canceled tasks.
+
+Remaining M4 work:
+
+- Issue `#15`: task-level observability, metrics, logging, and alerting.
+- Issue `#17`: regression sample suite, manual assembly QA, and beta release
+  checklist.
 
 ## Next Implementation Focus
 
-The next implementation slice should start M4 with paperability scoring and
-automatic fallback because those directly affect real-pipeline completion rate.
+Finish issue `#14` through PR review and merge, then move to issue `#15` for
+observability.
