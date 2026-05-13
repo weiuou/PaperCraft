@@ -9,9 +9,8 @@ M3 is implemented in code through real preprocessing, base mesh generation,
 paperability repair, constrained decimation, unfolding/layout, PDF export, and
 assembly metadata generation.
 
-M4 has started with issue `#14`: paperability scoring, automatic fallback,
-conservative unfolding retry, stage-level retry selection, and user-facing next
-actions.
+M4 is in progress. Issue `#14` is complete, and issue `#15` is active for
+task-level observability, metrics, logging, and basic alerting.
 
 ## Near-Term Execution Plan
 
@@ -147,27 +146,27 @@ Owner focus: worker, backend, frontend, QA
 
 Status: in progress.
 
-Current issue:
+Completed:
 
 - Issue `#14`: paperability scoring, automatic fallback, and stage-level retry.
 
 Implemented on the active branch:
 
-- Rule-based `paperability_score` and buildability warnings on repaired meshes.
-- Automatic complexity reduction when requested poly count exceeds page budget.
-- Conservative decimation and unfolding retry when the first unfolding attempt
-  fails.
-- `next_actions` in task status responses for failure recovery and fallback
-  guidance.
-- Frontend retry-stage selection for failed or canceled tasks.
+- Issue `#15`: task-level observability, metrics, logging, and alerting.
+- Structured event metadata with `task_id`, `project_id`, `user_id`, and
+  `stage` correlation fields.
+- Stage duration metrics stored on `stage_completed` task events.
+- Worker logs with structured correlation fields and duration/error metadata.
+- `GET /api/metrics/tasks` report for completion rate, failure rate, stage
+  durations, export rate, average page count, average part count, and basic
+  alert flags.
 
 Remaining M4 work:
 
-- Issue `#15`: task-level observability, metrics, logging, and alerting.
 - Issue `#17`: regression sample suite, manual assembly QA, and beta release
   checklist.
 
 ## Next Implementation Focus
 
-Finish issue `#14` through PR review and merge, then move to issue `#15` for
-observability.
+Finish issue `#15` through PR review and merge, then move to issue `#17` for
+regression samples and beta readiness.

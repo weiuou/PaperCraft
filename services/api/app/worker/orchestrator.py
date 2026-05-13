@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -142,7 +143,7 @@ def run_generation_pipeline(
         "Task picked up by worker. task_id=%s stage=%s",
         task.id,
         task.stage,
-        extra={"task_id": str(task.id), "stage": task.stage},
+        extra={**_log_context(task), "event": "task_picked_up", "stage": task.stage},
     )
 
     try:
@@ -160,14 +161,16 @@ def run_generation_pipeline(
                 "Stage started. task_id=%s stage=%s",
                 task.id,
                 stage.value,
-                extra={"task_id": str(task.id), "stage": stage.value},
+                extra={**_log_context(task), "event": "stage_started", "stage": stage.value},
             )
 
             mock_failure = _mock_failure_for_stage(db, task, stage)
             if mock_failure is not None:
                 raise TaskExecutionError(mock_failure, f"Mock failure at {stage.value}.")
 
+            stage_started_at = time.perf_counter()
             result = _execute_stage(db, task, stage, executor)
+            duration_ms = round((time.perf_counter() - stage_started_at) * 1000, 2)
             task.progress = result.progress
             _add_event(
                 db,
@@ -175,7 +178,7 @@ def run_generation_pipeline(
                 TaskEventType.STAGE_COMPLETED,
                 result.message,
                 stage=stage.value,
-                metadata=result.metadata or {},
+                metadata={**(result.metadata or {}), "duration_ms": duration_ms},
             )
             _add_event(
                 db,
@@ -191,7 +194,13 @@ def run_generation_pipeline(
                 task.id,
                 stage.value,
                 result.progress,
-                extra={"task_id": str(task.id), "stage": stage.value},
+                extra={
+                    **_log_context(task),
+                    "event": "stage_completed",
+                    "stage": stage.value,
+                    "progress": result.progress,
+                    "duration_ms": duration_ms,
+                },
             )
 
         task.stage = TaskStage.COMPLETED.value
@@ -206,7 +215,7 @@ def run_generation_pipeline(
             task.id,
             task.stage,
             task.progress,
-            extra={"task_id": str(task.id), "stage": task.stage},
+            extra={**_log_context(task), "event": "task_completed", "stage": task.stage, "progress": task.progress},
         )
         return task
     except TaskExecutionError as exc:
@@ -228,7 +237,7 @@ def run_generation_pipeline(
             task.id,
             task.stage,
             exc.code.value,
-            extra={"task_id": str(task.id), "stage": task.stage, "error_code": exc.code.value},
+            extra={**_log_context(task), "event": "task_failed", "stage": task.stage, "error_code": exc.code.value},
         )
         return task
     except Exception as exc:
@@ -252,7 +261,7 @@ def run_generation_pipeline(
             "Task failed unexpectedly. task_id=%s stage=%s",
             task.id,
             task.stage,
-            extra={"task_id": str(task.id), "stage": task.stage},
+            extra={**_log_context(task), "event": "task_failed", "stage": task.stage, "error_code": ErrorCode.INTERNAL_ERROR.value},
         )
         return task
 
@@ -652,15 +661,48 @@ def _add_event(
     stage: str | None,
     metadata: dict[str, object] | None = None,
 ) -> None:
+    event_metadata = _event_metadata(task, stage=stage, metadata=metadata)
     db.add(
         TaskEvent(
             task_id=task.id,
             stage=stage,
             event_type=event_type.value,
             message=message,
-            event_metadata=metadata or {},
+            event_metadata=event_metadata,
         )
     )
+
+
+def _event_metadata(
+    task: GenerationTask,
+    *,
+    stage: str | None,
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        **(metadata or {}),
+        "task_id": str(task.id),
+        "project_id": str(task.project_id),
+        "user_id": _task_user_id(task),
+        "stage": stage,
+    }
+
+
+def _log_context(task: GenerationTask) -> dict[str, object]:
+    return {
+        "task_id": str(task.id),
+        "project_id": str(task.project_id),
+        "user_id": _task_user_id(task),
+    }
+
+
+def _task_user_id(task: GenerationTask) -> str | None:
+    try:
+        if task.project is not None:
+            return str(task.project.user_id)
+    except Exception:
+        return None
+    return None
 
 
 def _create_mock_outputs(db: Session, task: GenerationTask) -> None:

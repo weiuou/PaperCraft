@@ -139,8 +139,10 @@ Completed work:
 - M4 paperability scoring and automatic fallback metadata on mesh/net artifacts
 - task status `next_actions` for clear recovery guidance
 - frontend retry-stage selection for failed or canceled tasks
+- task-level observability with correlated event metadata, stage duration
+  metrics, completion/export-rate reporting, and basic alert flags
 
 Next development focus:
 
-- finish issue `#14` by merging the M4 fallback branch
-- continue M4 with observability, regression samples, and beta QA
+- finish issue `#15` by merging the M4 observability branch
+- continue M4 with regression samples and beta QA

@@ -181,6 +181,25 @@ def test_real_pdf_artifact_can_be_downloaded(api_context: tuple[TestClient, sess
     assert b"AI PaperCraft Studio Assembly Guide" in response.content
 
 
+def test_task_metrics_report_includes_completion_and_stage_duration(
+    api_context: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, session_factory = api_context
+    _create_completed_task(session_factory)
+
+    response = client.get("/api/metrics/tasks")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["total_tasks"] == 1
+    assert payload["summary"]["completed_tasks"] == 1
+    assert payload["summary"]["completion_rate"] == 1.0
+    assert payload["business_metrics"]["export_rate"] == 1.0
+    assert payload["business_metrics"]["average_page_count"] is not None
+    assert payload["stage_durations_ms"]["preprocessing"]["count"] == 1
+    assert payload["stage_durations_ms"]["exporting"]["avg"] >= 0
+
+
 def test_missing_artifact_returns_stable_error(api_context: tuple[TestClient, sessionmaker[Session]]) -> None:
     client, _session_factory = api_context
 
