@@ -109,26 +109,33 @@ or:
 
 ## Current Status
 
-The project has completed the M1 backend foundation and is moving into the M2
-internal demo loop.
+The project has completed M1 and M2. The current M3 code path runs real
+preprocessing, base mesh generation, paperability repair, constrained
+decimation, unfolding/layout, PDF export, and assembly metadata generation.
 
-Completed foundation work:
+Completed work:
 
 - repository structure, local infra, and onboarding docs
 - frozen MVP scope and acceptance contract
 - core SQLAlchemy models and Alembic schema for projects, tasks, artifacts, and
   assembly metadata
 - project, upload, task creation, and task status APIs
-- Celery/Redis worker backbone with mock stage progression
-- mock preview/export artifact records for end-to-end demo development
-- object storage-backed source image uploads and mock artifact downloads through
-  the local MinIO stack
+- Celery/Redis worker backbone with stage progression, retry, and cancellation
+- object storage-backed source image uploads and artifact downloads through the
+  local MinIO stack
 - Docker Compose services for web, API, worker, database, Redis, and MinIO
 - frontend demo flow with project creation, image upload, task polling, mock
   workbench previews, paper-net page switching, task history, regeneration,
   cancellation, retry, controlled mock failures, and PDF download
+- real M3 artifacts for `preprocess_mask`, `preprocess_crop`, `base_mesh`,
+  `preview_model`, `repaired_mesh`, `low_poly_mesh`, `net_json`, `net_svg`,
+  and `export_pdf`
+- real assembly metadata derived from the exported net
 
 Next development focus:
 
-- start M3 with real preprocessing, then mesh, unfolding, and export modules
-- build regression samples and observability around the real pipeline stages
+- close GitHub bookkeeping for issue `#12`, which is merged in code through PR
+  `#27` but still open in the issue tracker
+- close issue `#13` after this export implementation is merged
+- start M4 stabilization: paperability scoring, automatic fallback,
+  observability, regression samples, and beta QA

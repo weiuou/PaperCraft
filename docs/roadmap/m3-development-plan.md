@@ -1,27 +1,31 @@
 # M3 Development Plan
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ## Summary
 
 M3 replaces the M2 mock pipeline one stage at a time while keeping the demo loop
-usable after each merge. Completed slices include issue `#9`: real image
-preprocessing, and issue `#10`: deterministic, category-constrained base mesh
-generation, and issue `#11`: paperability optimization and constrained
-decimation. The current active slice is issue `#12`: unfolding and page layout.
+usable after each merge. Completed code slices include issue `#9`: real image
+preprocessing, issue `#10`: deterministic category-constrained base mesh
+generation, issue `#11`: paperability optimization and constrained decimation,
+issue `#12`: unfolding and page layout, and issue `#13`: PDF export,
+instruction sheet generation, and assembly metadata.
 
-Final PDF export remains later M3 work under issue `#13`.
+M3 is code-complete on this branch. The next sequencing step is GitHub
+bookkeeping for `#12`, `#13`, and tracking issue `#16`, followed by M4
+stabilization.
 
 ## GitHub Alignment
 
-- Issues `#7` and `#8` are M2 work and should be closed after the M2 demo loop
-  merge.
-- Tracking issue `#16` should mark `#7` and `#8` complete.
+- Issues `#7` and `#8` are closed M2 work.
+- Tracking issue `#16` already marks `#7` and `#8` complete.
 - Issue `#9` is complete after PR `#24`.
 - Issue `#10` is complete after PR `#25`.
 - Issue `#11` is complete after PR `#26`.
-- Issue `#12` is the active M3 entry point after decimation.
-- Issue `#13` remains open for later M3 sequencing.
+- Issue `#12` is code-complete after PR `#27`, but the GitHub issue and
+  tracking checkbox still need to be closed/updated.
+- Issue `#13` is implemented on the `codex/issue-13-pdf-export` branch and
+  should be closed after merge.
 
 ## Completed Slice: `#9` Image Preprocessing
 
@@ -73,7 +77,7 @@ Final PDF export remains later M3 work under issue `#13`.
 - Continue to run M2 mock unfolding and export stages after low-poly mesh
   generation succeeds.
 
-## Active Slice: `#12` Unfolding And Layout
+## Completed Code Slice: `#12` Unfolding And Layout
 
 - Use deterministic Python OBJ processing; do not add external unfolding
   libraries for this first pass.
@@ -85,6 +89,22 @@ Final PDF export remains later M3 work under issue `#13`.
 - Apply a first fallback simplification path by increasing parts per page when
   the calculated layout would exceed `max_pages`.
 - Continue to run M2 mock export after unfolding succeeds.
+
+## Completed Code Slice: `#13` PDF Export And Assembly Metadata
+
+- Reads the latest `net_json` and `net_svg` artifacts from the current task.
+- Generates a downloadable `export_pdf` artifact in the exports object-storage
+  group.
+- Includes printable A4/A3 pages, page numbers, cut lines, fold lines, glue
+  flaps, pair numbering, and a first-page instruction sheet or equivalent
+  assembly guidance.
+- Persists assembly metadata using real export inputs:
+  - `page_count`
+  - `part_count`
+  - `difficulty_score`
+  - `estimated_build_minutes`
+- Fails export with `EXPORT_FAILED` when PDF generation or persistence cannot
+  complete.
 
 ## Failure Contract
 
@@ -100,6 +120,8 @@ Final PDF export remains later M3 work under issue `#13`.
   `DECIMATE_FAILED`.
 - If unfolding or page layout cannot produce a net within budget, fail with
   `UNFOLD_FAILED`.
+- If PDF export or final assembly metadata cannot be produced, fail with
+  `EXPORT_FAILED`.
 - Storage read/write errors continue to use the existing storage error codes so
   infrastructure failures stay distinguishable from algorithm failures.
 
@@ -145,6 +167,16 @@ For `#12`:
 - Unfolding failures return `UNFOLD_FAILED`.
 - The task continues into the later export stage after unfolding succeeds.
 
+For `#13`:
+
+- Positive samples produce an `export_pdf` artifact.
+- The PDF can be downloaded through the existing artifact download endpoint.
+- The PDF includes page numbers, cut/fold styling, flap styling, pair
+  numbering, and basic assembly guidance.
+- Assembly metadata is stored with real page count, part count, difficulty
+  score, and estimated build time.
+- Export failures return `EXPORT_FAILED`.
+
 ## Test Plan
 
 - Unit-test Pillow preprocessing for successful mask/crop generation and
@@ -161,6 +193,10 @@ For `#12`:
   `decimating` writes `low_poly_mesh`.
 - Unit-test unfolding output for structured net JSON and SVG artifacts.
 - Worker-test that `unfolding` writes `net_json` and `net_svg`.
+- Unit-test PDF export generation from representative `net_json` data.
+- Worker-test that `exporting` writes `export_pdf` and assembly metadata.
+- API-test that completed task status returns the real PDF artifact download
+  URL and real assembly metadata.
 - Run:
   - `uv run --extra dev pytest`
   - `pnpm --filter @papercraft/web typecheck`

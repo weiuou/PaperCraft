@@ -50,7 +50,7 @@ def api_context(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, 
         yield test_client, TestingSessionLocal
 
 
-def _create_completed_mock_task(session_factory: sessionmaker[Session]) -> uuid.UUID:
+def _create_completed_task(session_factory: sessionmaker[Session]) -> uuid.UUID:
     with session_factory() as db:
         user = User(email=f"{uuid.uuid4()}@example.com")
         db.add(user)
@@ -112,11 +112,11 @@ def _source_png_bytes() -> bytes:
     return output.getvalue()
 
 
-def test_task_status_returns_mock_artifacts_and_download_urls(
+def test_task_status_returns_real_pipeline_artifacts_and_download_urls(
     api_context: tuple[TestClient, sessionmaker[Session]],
 ) -> None:
     client, session_factory = api_context
-    task_id = _create_completed_mock_task(session_factory)
+    task_id = _create_completed_task(session_factory)
 
     response = client.get(f"/api/tasks/{task_id}")
 
@@ -152,13 +152,19 @@ def test_task_status_returns_mock_artifacts_and_download_urls(
     assert net_json["metadata"]["real_stage"] == "unfolding"
     net_svg = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.NET_SVG.value)
     assert net_svg["metadata"]["real_stage"] == "unfolding"
-    assert payload["assembly_metadata"]["page_count"] == 3
+    export_pdf = next(artifact for artifact in payload["artifacts"] if artifact["kind"] == ArtifactKind.EXPORT_PDF.value)
+    assert export_pdf["metadata"]["mock"] is False
+    assert export_pdf["metadata"]["real_stage"] == "exporting"
+    assert export_pdf["metadata"]["instruction_sheet"]
+    assert payload["assembly_metadata"]["page_count"] == export_pdf["metadata"]["page_count"]
+    assert payload["assembly_metadata"]["part_count"] == export_pdf["metadata"]["part_count"]
+    assert payload["assembly_metadata"]["metadata"]["mock"] is False
     assert payload["assembly_metadata"]["metadata"]["pair_numbering"]
 
 
-def test_mock_pdf_artifact_can_be_downloaded(api_context: tuple[TestClient, sessionmaker[Session]]) -> None:
+def test_real_pdf_artifact_can_be_downloaded(api_context: tuple[TestClient, sessionmaker[Session]]) -> None:
     client, session_factory = api_context
-    task_id = _create_completed_mock_task(session_factory)
+    task_id = _create_completed_task(session_factory)
     with session_factory() as db:
         pdf_artifact = db.scalar(
             select(Artifact).where(Artifact.task_id == task_id, Artifact.kind == ArtifactKind.EXPORT_PDF.value)
@@ -171,6 +177,7 @@ def test_mock_pdf_artifact_can_be_downloaded(api_context: tuple[TestClient, sess
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
     assert response.content.startswith(b"%PDF-1.4")
+    assert b"AI PaperCraft Studio Assembly Guide" in response.content
 
 
 def test_missing_artifact_returns_stable_error(api_context: tuple[TestClient, sessionmaker[Session]]) -> None:

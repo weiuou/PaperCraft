@@ -12,8 +12,8 @@ Planned responsibilities:
 
 ## Current implementation
 
-The first implementation slice defines the core data and task contracts for
-issues `#3`, `#4`, and `#5`:
+The service now covers the M1 foundation, M2 demo loop, and the implemented M3
+pipeline stages through unfolding/layout:
 
 - SQLAlchemy models for the core MVP entities
 - Alembic migration `20260505_0001_core_schema`
@@ -27,11 +27,13 @@ issues `#3`, `#4`, and `#5`:
 - task status endpoint with stable stage, progress, and error fields
 - Celery app configuration backed by Redis
 - task enqueueing from the task creation API
-- worker pipeline orchestrator with mock stage execution
+- worker pipeline orchestrator with real preprocessing, mesh generation,
+  paperability repair, constrained decimation, and unfolding/layout
 - task events, progress updates, completion, failure write-back, and retry or
   cancellation hooks
-- mock artifact records for 3D preview, paper-net preview data, PDF export, and
-  assembly metadata
+- artifact records for preprocessing, mesh, paperability, decimation, net JSON,
+  net SVG, preview, PDF export, and assembly metadata
+- real PDF export and assembly metadata generation from net artifacts
 
 Implemented endpoints:
 
@@ -43,7 +45,8 @@ Implemented endpoints:
 - `POST /api/projects/{project_id}/tasks`
 - `GET /api/tasks/{task_id}` including artifacts and assembly metadata when
   available
-- `GET /api/artifacts/{artifact_id}/download` for local mock artifact downloads
+- `GET /api/artifacts/{artifact_id}/download` for stored artifacts, with a mock
+  fallback only for legacy/mock artifacts
 
 ## Local commands
 
