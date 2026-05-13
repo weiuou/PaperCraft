@@ -214,7 +214,14 @@ def run_generation_pipeline(
         task.error_code = exc.code.value
         task.error_message = exc.message
         task.finished_at = datetime.now(UTC)
-        _add_event(db, task, TaskEventType.FAILED, exc.message, stage=task.stage, metadata={"error_code": exc.code.value})
+        _add_event(
+            db,
+            task,
+            TaskEventType.FAILED,
+            exc.message,
+            stage=task.stage,
+            metadata={"error_code": exc.code.value, "next_actions": _next_actions_for_error(exc.code)},
+        )
         db.commit()
         logger.exception(
             "Task failed. task_id=%s stage=%s error_code=%s",
@@ -235,7 +242,10 @@ def run_generation_pipeline(
             TaskEventType.FAILED,
             str(exc),
             stage=task.stage,
-            metadata={"error_code": ErrorCode.INTERNAL_ERROR.value},
+            metadata={
+                "error_code": ErrorCode.INTERNAL_ERROR.value,
+                "next_actions": _next_actions_for_error(ErrorCode.INTERNAL_ERROR),
+            },
         )
         db.commit()
         logger.exception(
@@ -281,6 +291,24 @@ def _mock_failure_for_stage(db: Session, task: GenerationTask, stage: TaskStage)
         TaskStage.UNFOLDING: ErrorCode.UNFOLD_FAILED,
         TaskStage.EXPORTING: ErrorCode.EXPORT_FAILED,
     }[stage]
+
+
+def _next_actions_for_error(code: ErrorCode) -> list[str]:
+    return {
+        ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND: [
+            "Upload a cleaner image with one centered subject and stronger contrast.",
+            "Retry from preprocessing after replacing the source image.",
+        ],
+        ErrorCode.PREPROCESS_FAILED: ["Retry from preprocessing or use a simpler, higher-contrast image."],
+        ErrorCode.MODEL_GEN_FAILED: ["Retry from model generation with a lower target poly count."],
+        ErrorCode.PAPERABILITY_OPT_FAILED: ["Retry from paperability after choosing simpler settings."],
+        ErrorCode.DECIMATE_FAILED: ["Lower target poly count or increase max pages, then retry from decimating."],
+        ErrorCode.UNFOLD_FAILED: ["Increase max pages or reduce target poly count, then retry from unfolding."],
+        ErrorCode.EXPORT_FAILED: ["Retry from exporting. Prior net artifacts should remain available."],
+        ErrorCode.STORAGE_READ_FAILED: ["Check object storage availability and retry the failed stage."],
+        ErrorCode.STORAGE_WRITE_FAILED: ["Check object storage availability and retry the failed stage."],
+        ErrorCode.INTERNAL_ERROR: ["Retry the task from the failed stage. Check worker logs if it fails again."],
+    }.get(code, ["Retry the task from the failed stage or regenerate with simpler settings."])
 
 
 def _run_preprocessing_stage(db: Session, task: GenerationTask) -> StageResult:
@@ -472,7 +500,7 @@ def _run_unfolding_stage(db: Session, task: GenerationTask) -> StageResult:
     except ObjectStorageError as exc:
         raise TaskExecutionError(exc.code, exc.message) from exc
     except UnfoldingFailed as exc:
-        raise TaskExecutionError(ErrorCode.UNFOLD_FAILED, str(exc)) from exc
+        result = _run_conservative_unfolding_fallback(db, task, str(exc))
 
     for payload in result.artifacts:
         _persist_mesh_artifact(db, task, payload, ArtifactPathGroup.NETS)
@@ -481,6 +509,52 @@ def _run_unfolding_stage(db: Session, task: GenerationTask) -> StageResult:
         message="Unfolding and layout completed.",
         metadata=result.metadata,
     )
+
+
+def _run_conservative_unfolding_fallback(db: Session, task: GenerationTask, failure_message: str):
+    repaired_mesh = _latest_artifact(db, task, ArtifactKind.REPAIRED_MESH)
+    if task.param_config is None:
+        raise TaskExecutionError(
+            ErrorCode.UNFOLD_FAILED,
+            "Task parameter snapshot is required before unfolding fallback.",
+        )
+    try:
+        repaired_content = get_artifact_bytes(repaired_mesh.storage_key)
+        fallback_decimation = decimate_mesh(
+            repaired_mesh_content=repaired_content,
+            repaired_mesh_metadata=repaired_mesh.artifact_metadata,
+            target_poly_count=max(12, min(task.param_config.target_poly_count, task.param_config.max_pages * 12)),
+            max_pages=task.param_config.max_pages,
+        )
+        fallback_metadata = {
+            **fallback_decimation.artifact.metadata,
+            "auto_fallback": True,
+            "fallback_reason": "unfolding_failed_conservative_decimation",
+            "fallback_source_error": failure_message,
+            "next_actions": ["Unfolding fallback reduced mesh complexity and retried layout."],
+        }
+        fallback_artifact = type(fallback_decimation.artifact)(
+            kind=fallback_decimation.artifact.kind,
+            filename="fallback-low-poly-mesh.obj",
+            mime_type=fallback_decimation.artifact.mime_type,
+            content=fallback_decimation.artifact.content,
+            metadata=fallback_metadata,
+        )
+        _persist_mesh_artifact(db, task, fallback_artifact, ArtifactPathGroup.MESHES)
+        return unfold_low_poly_mesh(
+            low_poly_mesh_content=fallback_artifact.content,
+            low_poly_mesh_metadata=fallback_artifact.metadata,
+            paper_size=task.param_config.paper_size,
+            flap_size=max(3, min(task.param_config.flap_size, 6)),
+            max_pages=task.param_config.max_pages,
+        )
+    except ObjectStorageError as exc:
+        raise TaskExecutionError(exc.code, exc.message) from exc
+    except (MeshDecimationFailed, UnfoldingFailed) as exc:
+        raise TaskExecutionError(
+            ErrorCode.UNFOLD_FAILED,
+            f"{failure_message}; conservative fallback also failed: {exc}",
+        ) from exc
 
 
 def _run_export_stage(db: Session, task: GenerationTask) -> StageResult:

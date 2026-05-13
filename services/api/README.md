@@ -12,8 +12,8 @@ Planned responsibilities:
 
 ## Current implementation
 
-The service now covers the M1 foundation, M2 demo loop, and the implemented M3
-pipeline stages through unfolding/layout:
+The service now covers the M1 foundation, M2 demo loop, M3 real pipeline, and
+the first M4 stabilization slice:
 
 - SQLAlchemy models for the core MVP entities
 - Alembic migration `20260505_0001_core_schema`
@@ -28,12 +28,15 @@ pipeline stages through unfolding/layout:
 - Celery app configuration backed by Redis
 - task enqueueing from the task creation API
 - worker pipeline orchestrator with real preprocessing, mesh generation,
-  paperability repair, constrained decimation, and unfolding/layout
+  paperability repair, constrained decimation, unfolding/layout, and PDF export
 - task events, progress updates, completion, failure write-back, and retry or
   cancellation hooks
+- task status next-action suggestions for fallback and recovery guidance
 - artifact records for preprocessing, mesh, paperability, decimation, net JSON,
   net SVG, preview, PDF export, and assembly metadata
 - real PDF export and assembly metadata generation from net artifacts
+- paperability scoring, automatic page-budget fallback, and conservative
+  unfolding retry metadata
 
 Implemented endpoints:
 

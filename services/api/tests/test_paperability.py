@@ -27,6 +27,8 @@ def test_optimize_paperability_outputs_repaired_mesh_metadata() -> None:
     assert result.metadata["real_stage"] == "paperability_optimizing"
     assert result.metadata["source_mesh_strategy"] == "pet_body_head"
     assert result.metadata["face_count"] > 0
+    assert 1 <= result.metadata["paperability_score"] <= 10
+    assert isinstance(result.metadata["buildability_warnings"], list)
     assert result.metadata["repair_actions"]
 
 
@@ -47,3 +49,23 @@ def test_decimate_mesh_outputs_low_poly_mesh_with_budget_metadata() -> None:
     assert result.metadata["real_stage"] == "decimating"
     assert result.metadata["face_count"] <= 24
     assert result.metadata["page_budget_faces"] == 48
+    assert result.metadata["auto_fallback"] is False
+
+
+def test_decimate_mesh_auto_reduces_complexity_for_page_budget() -> None:
+    repaired = optimize_paperability(
+        base_mesh_content=_base_mesh(),
+        base_mesh_metadata={"mesh_strategy": "pet_body_head"},
+    )
+
+    result = decimate_mesh(
+        repaired_mesh_content=repaired.artifact.content,
+        repaired_mesh_metadata=repaired.artifact.metadata,
+        target_poly_count=300,
+        max_pages=1,
+    )
+
+    assert result.metadata["effective_target_poly_count"] == 24
+    assert result.metadata["auto_fallback"] is True
+    assert result.metadata["fallback_reason"] == "target_poly_count_exceeded_page_budget"
+    assert result.metadata["next_actions"]

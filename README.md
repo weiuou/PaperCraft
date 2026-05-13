@@ -109,7 +109,12 @@ or:
 
 ## Current Status
 
-The project has completed M1 and M2. The current M3 code path runs real
+The project has completed M1, M2, and M3. The current M4 branch adds
+stabilization behavior on top of the real pipeline: paperability scoring,
+automatic complexity fallback, conservative unfolding retry, stage-level retry
+selection, and user-facing next actions.
+
+The current real pipeline runs
 preprocessing, base mesh generation, paperability repair, constrained
 decimation, unfolding/layout, PDF export, and assembly metadata generation.
 
@@ -131,11 +136,11 @@ Completed work:
   `preview_model`, `repaired_mesh`, `low_poly_mesh`, `net_json`, `net_svg`,
   and `export_pdf`
 - real assembly metadata derived from the exported net
+- M4 paperability scoring and automatic fallback metadata on mesh/net artifacts
+- task status `next_actions` for clear recovery guidance
+- frontend retry-stage selection for failed or canceled tasks
 
 Next development focus:
 
-- close GitHub bookkeeping for issue `#12`, which is merged in code through PR
-  `#27` but still open in the issue tracker
-- close issue `#13` after this export implementation is merged
-- start M4 stabilization: paperability scoring, automatic fallback,
-  observability, regression samples, and beta QA
+- finish issue `#14` by merging the M4 fallback branch
+- continue M4 with observability, regression samples, and beta QA

@@ -175,6 +175,10 @@ a {
   padding: 0;
 }
 
+.compact-field {
+  margin-top: -4px;
+}
+
 .segmented {
   background: #eee6da;
   border-radius: 8px;
@@ -427,6 +431,22 @@ a {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.next-actions {
+  background: #fff8dd;
+  border: 1px solid #e7c96d;
+  border-radius: 8px;
+  color: #6f5210;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.next-actions p {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
 }
 
 .metric {

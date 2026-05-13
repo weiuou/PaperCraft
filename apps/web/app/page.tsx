@@ -61,6 +61,8 @@ const mockFailureStages: Array<{ label: string; value: TaskStage | "none" }> = [
   { label: "Export fails", value: "exporting" },
 ];
 
+const retryStages: Array<{ label: string; value: TaskStage }> = stages.filter((stage) => stage.value !== "upload_validation" && stage.value !== "completed");
+
 type DraftParams = {
   complexity_level: ComplexityLevel;
   target_poly_count: number;
@@ -111,6 +113,7 @@ export default function StudioPage() {
   const [netPreviewError, setNetPreviewError] = useState<string | null>(null);
   const [selectedNetPageIndex, setSelectedNetPageIndex] = useState(0);
   const [mockFailureStage, setMockFailureStage] = useState<TaskStage | "none">("none");
+  const [retryStage, setRetryStage] = useState<TaskStage>("preprocessing");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -151,6 +154,12 @@ export default function StudioPage() {
   const canCancel = task?.status === "queued" || task?.status === "in_progress";
   const canRetry = task?.status === "failed" || task?.status === "canceled";
   const canRegenerate = project !== null && image !== null && !canCancel;
+
+  useEffect(() => {
+    if (task?.status === "failed" && task.stage !== "completed" && task.stage !== "upload_validation") {
+      setRetryStage(task.stage);
+    }
+  }, [task?.stage, task?.status]);
 
   useEffect(() => {
     if (!netArtifact) {
@@ -297,7 +306,7 @@ export default function StudioPage() {
     try {
       const retriedTask = await requestJson<TaskStatusResponse>(`/backend/tasks/${task.task_id}/retry`, {
         method: "POST",
-        body: JSON.stringify({ stage: task.stage === "completed" ? "preprocessing" : task.stage }),
+        body: JSON.stringify({ stage: retryStage }),
       });
       setTask(retriedTask);
       if (project) {
@@ -485,6 +494,18 @@ export default function StudioPage() {
               Retry
             </button>
           </div>
+          {canRetry ? (
+            <label className="field compact-field">
+              <span>Retry from stage</span>
+              <select value={retryStage} onChange={(event) => setRetryStage(event.target.value as TaskStage)}>
+                {retryStages.map((stage) => (
+                  <option key={stage.value} value={stage.value}>
+                    {stage.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {error ? (
             <div className="error-strip">
               <AlertCircle size={17} />
@@ -533,6 +554,18 @@ export default function StudioPage() {
             <Metric label="Progress" value={`${task?.progress ?? 0}%`} />
             <Metric label="Task" value={task ? shortId(task.task_id) : "-"} />
           </div>
+
+          {task?.next_actions.length ? (
+            <div className="next-actions">
+              <div className="section-title">
+                <AlertCircle size={18} />
+                <h2>Next actions</h2>
+              </div>
+              {task.next_actions.map((action) => (
+                <p key={action}>{action}</p>
+              ))}
+            </div>
+          ) : null}
 
           <div className="history-panel">
             <div className="section-title">
@@ -586,7 +619,7 @@ export default function StudioPage() {
                   <Metric label="Build" value={`${task.assembly_metadata.estimated_build_minutes} min`} />
                 </div>
               ) : (
-                <p className="empty-copy">Assembly metadata appears after the mock export stage.</p>
+                <p className="empty-copy">Assembly metadata appears after the export stage.</p>
               )}
               <ArtifactLink artifact={artifactsByKind.export_pdf?.[0]} label="Download PDF" />
             </div>
@@ -660,7 +693,7 @@ function NetPreviewPane({
         ) : artifact ? (
           <p className="empty-copy">Loading paper-net preview.</p>
         ) : (
-          <p className="empty-copy">Waiting for a completed mock task.</p>
+          <p className="empty-copy">Waiting for a completed task.</p>
         )}
       </div>
       <ArtifactLink artifact={artifact} label="Open net JSON" />
@@ -693,7 +726,7 @@ function PreviewPane({
             <small>{formatBytes(artifact.file_size)}</small>
           </>
         ) : (
-          <p className="empty-copy">Waiting for a completed mock task.</p>
+          <p className="empty-copy">Waiting for a completed task.</p>
         )}
       </div>
       <ArtifactLink artifact={artifact} label={variant === "net" ? "Open net JSON" : "Download preview"} />

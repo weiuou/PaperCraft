@@ -189,6 +189,7 @@ def test_preprocessing_subject_not_found_fails_task(db: Session, monkeypatch: py
     )
     assert failed_event is not None
     assert failed_event.event_metadata["error_code"] == ErrorCode.PREPROCESS_SUBJECT_NOT_FOUND.value
+    assert failed_event.event_metadata["next_actions"]
 
 
 def test_pipeline_failure_writes_readable_error(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,6 +210,36 @@ def test_pipeline_failure_writes_readable_error(db: Session, monkeypatch: pytest
     )
     assert failed_event is not None
     assert failed_event.event_metadata["error_code"] == ErrorCode.EXPORT_FAILED.value
+    assert failed_event.event_metadata["next_actions"] == ["Retry from exporting. Prior net artifacts should remain available."]
+
+
+def test_unfolding_failure_uses_conservative_fallback(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"count": 0}
+
+    def flaky_unfold(**kwargs):
+        from app.services.unfolding import UnfoldingFailed, unfold_low_poly_mesh
+
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise UnfoldingFailed("layout overflow")
+        return unfold_low_poly_mesh(**kwargs)
+
+    monkeypatch.setattr("app.worker.orchestrator.unfold_low_poly_mesh", flaky_unfold)
+    task_id = _create_task(db)
+
+    task = run_generation_pipeline(db, task_id)
+
+    assert task.status == TaskStatus.COMPLETED.value
+    low_poly_meshes = db.scalars(
+        select(Artifact).where(Artifact.task_id == task_id, Artifact.kind == ArtifactKind.LOW_POLY_MESH.value)
+    ).all()
+    fallback_mesh = next(
+        (artifact for artifact in low_poly_meshes if artifact.artifact_metadata.get("fallback_source_error") == "layout overflow"),
+        None,
+    )
+    assert fallback_mesh is not None
+    assert fallback_mesh.artifact_metadata["auto_fallback"] is True
+    assert fallback_mesh.artifact_metadata["fallback_reason"] == "unfolding_failed_conservative_decimation"
 
 
 def test_mock_failure_stage_from_task_event_fails_once_then_retry_succeeds(db: Session) -> None:

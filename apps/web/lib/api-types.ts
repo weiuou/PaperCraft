@@ -77,6 +77,7 @@ export type TaskStatusResponse = {
   progress: number;
   error_code: string | null;
   error_message: string | null;
+  next_actions: string[];
   artifacts: ArtifactResponse[];
   assembly_metadata: {
     page_count: number;
