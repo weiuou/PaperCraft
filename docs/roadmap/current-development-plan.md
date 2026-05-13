@@ -9,8 +9,8 @@ M3 is implemented in code through real preprocessing, base mesh generation,
 paperability repair, constrained decimation, unfolding/layout, PDF export, and
 assembly metadata generation.
 
-M4 is in progress. Issue `#14` is complete, and issue `#15` is active for
-task-level observability, metrics, logging, and basic alerting.
+M4 is in progress. Issues `#14` and `#15` are complete, and issue `#17` is
+active for regression samples, manual assembly QA, and beta release readiness.
 
 ## Near-Term Execution Plan
 
@@ -149,24 +149,22 @@ Status: in progress.
 Completed:
 
 - Issue `#14`: paperability scoring, automatic fallback, and stage-level retry.
+- Issue `#15`: task-level observability, metrics, logging, and alerting.
 
 Implemented on the active branch:
 
-- Issue `#15`: task-level observability, metrics, logging, and alerting.
-- Structured event metadata with `task_id`, `project_id`, `user_id`, and
-  `stage` correlation fields.
-- Stage duration metrics stored on `stage_completed` task events.
-- Worker logs with structured correlation fields and duration/error metadata.
-- `GET /api/metrics/tasks` report for completion rate, failure rate, stage
-  durations, export rate, average page count, average part count, and basic
-  alert flags.
+- Issue `#17`: regression sample suite, manual assembly QA, and beta release
+  checklist.
+- Versioned regression sample manifest with 15 positive samples and 6 failure
+  samples.
+- Repeatable regression runbook and result recording template.
+- Manual assembly QA checklist.
+- Beta release checklist and rollback procedure.
 
 Remaining M4 work:
 
-- Issue `#17`: regression sample suite, manual assembly QA, and beta release
-  checklist.
+- Merge issue `#17`, then close the M4 milestone and MVP tracking issue.
 
 ## Next Implementation Focus
 
-Finish issue `#15` through PR review and merge, then move to issue `#17` for
-regression samples and beta readiness.
+Finish issue `#17` through PR review and merge.

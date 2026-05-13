@@ -11,5 +11,6 @@ Project documentation and references live here.
 
 - [Current development plan](roadmap/current-development-plan.md)
 - [M3 development plan](roadmap/m3-development-plan.md)
+- [QA validation assets](qa/README.md)
 - [Architecture reference](architecture/README.md)
 - [PRD reference](prd/README.md)

@@ -110,9 +110,9 @@ or:
 ## Current Status
 
 The project has completed M1, M2, and M3. The current M4 branch adds
-stabilization behavior on top of the real pipeline: paperability scoring,
-automatic complexity fallback, conservative unfolding retry, stage-level retry
-selection, and user-facing next actions.
+the final MVP validation assets on top of the real pipeline and stabilization
+work: regression sample suite, regression runbook, manual assembly QA, beta
+release checklist, and rollback notes.
 
 The current real pipeline runs
 preprocessing, base mesh generation, paperability repair, constrained
@@ -141,8 +141,10 @@ Completed work:
 - frontend retry-stage selection for failed or canceled tasks
 - task-level observability with correlated event metadata, stage duration
   metrics, completion/export-rate reporting, and basic alert flags
+- QA validation assets for regression samples, manual assembly review, beta
+  release readiness, and rollback
 
 Next development focus:
 
-- finish issue `#15` by merging the M4 observability branch
-- continue M4 with regression samples and beta QA
+- finish issue `#17` by merging the M4 QA branch
+- close the M4 milestone and MVP tracking issue after merge
